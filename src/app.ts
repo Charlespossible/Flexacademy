@@ -1,4 +1,5 @@
-import express from "express";
+import "express-async-errors";
+import express, { Application } from "express";
 import helmet from "helmet";
 import cors from "cors";
 import compression from "compression";
@@ -6,38 +7,42 @@ import morgan from "morgan";
 import passport from "passport";
 import swaggerUi from "swagger-ui-express";
 
-import { morganStream } from "./utils/logger.js";
-import { errorHandler } from "./middlewares/errorHandler.js";
-import { notFound } from "./middlewares/notFound.js";
-import { globalRateLimiter } from "./middlewares/rateLimiter.js";
-import { configurePassport } from "./config/passport.js";
-import { swaggerSpec } from "./config/swagger.js";
+import { morganStream } from "./utils/logger";
+import { errorHandler } from "./middlewares/errorHandler";
+import { notFound } from "./middlewares/notFound";
+import { globalRateLimiter } from "./middlewares/rateLimiter";
+import { configurePassport } from "./config/passport";
+import { swaggerSpec } from "./config/swagger";
 
-// Route imports
-import authRoutes from "./routes/auth.routes.js";
-import userRoutes from "./routes/user.routes.js";
-import subjectRoutes from "./routes/subject.routes.js";
-import courseRoutes from "./routes/course.routes.js";
-import lessonRoutes from "./routes/lesson.routes.js";
-import quizRoutes from "./routes/quiz.routes.js";
-import questionRoutes from "./routes/question.routes.js";
-import progressRoutes from "./routes/progress.routes.js";
-import subscriptionRoutes from "./routes/subscription.routes.js";
-import leaderboardRoutes from "./routes/leaderboard.routes.js";
-import aiTutorRoutes from "./routes/aiTutor.routes.js";
-import liveClassRoutes from "./routes/liveClass.routes.js";
-import notificationRoutes from "./routes/notification.routes.js";
-import adminRoutes from "./routes/admin.routes.js";
-import webhookRoutes from "./routes/webhook.routes.js";
+// Routes
+import authRoutes from "./routes/auth.routes";
+import userRoutes from "./routes/user.routes";
+import subjectRoutes from "./routes/subject.routes";
+import courseRoutes from "./routes/course.routes";
+import lessonRoutes from "./routes/lesson.routes";
+import quizRoutes from "./routes/quiz.routes";
+import questionRoutes from "./routes/question.routes";
+import progressRoutes from "./routes/progress.routes";
+import subscriptionRoutes from "./routes/subscription.routes";
+import leaderboardRoutes from "./routes/leaderboard.routes";
+import aiTutorRoutes from "./routes/aiTutor.routes";
+import liveClassRoutes from "./routes/liveClass.routes";
+import notificationRoutes from "./routes/notification.routes";
+import adminRoutes from "./routes/admin.routes";
+import webhookRoutes from "./routes/webhook.routes";
 
-const app = express();
+const app: Application = express();
 
-// ─── Security & Performance Middleware ────────
+// ─── Security & Performance ───────────────────
 app.use(helmet());
 app.use(compression());
 
-// Webhooks need raw body — must be BEFORE express.json()
-app.use("/api/v1/webhooks", express.raw({ type: "application/json" }), webhookRoutes);
+// Webhooks need raw body BEFORE express.json()
+app.use(
+  "/api/v1/webhooks",
+  express.raw({ type: "application/json" }),
+  webhookRoutes
+);
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
@@ -45,7 +50,7 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 // ─── CORS ─────────────────────────────────────
 app.use(
   cors({
-    origin: [process.env.CLIENT_URL, "http://localhost:3000"],
+    origin: [process.env.CLIENT_URL ?? "http://localhost:3000"],
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -57,7 +62,7 @@ if (process.env.NODE_ENV !== "test") {
   app.use(morgan("combined", { stream: morganStream }));
 }
 
-// ─── Passport (Auth strategies) ───────────────
+// ─── Passport ────────────────────────────────
 configurePassport(passport);
 app.use(passport.initialize());
 
@@ -65,11 +70,11 @@ app.use(passport.initialize());
 app.use("/api/", globalRateLimiter);
 
 // ─── Health Check ─────────────────────────────
-app.get("/health", (req, res) => {
+app.get("/health", (_req, res) => {
   res.status(200).json({
     status: "OK",
     service: "FlexAcademy API",
-    version: process.env.API_VERSION || "v1",
+    version: process.env.API_VERSION ?? "v1",
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV,
   });

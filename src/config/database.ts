@@ -1,10 +1,13 @@
 import { PrismaClient } from "@prisma/client";
-import { logger } from "../utils/logger.js";
+import { logger } from "../utils/logger";
 
-const globalForPrisma = globalThis;
+// Prevent multiple Prisma instances in dev (hot reload)
+const globalForPrisma = globalThis as typeof globalThis & {
+  prisma?: PrismaClient;
+};
 
-export const prisma =
-  globalForPrisma.prisma ||
+export const prisma: PrismaClient =
+  globalForPrisma.prisma ??
   new PrismaClient({
     log: [
       { emit: "event", level: "query" },
@@ -17,11 +20,13 @@ if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;
 }
 
-// Log slow queries in dev
 if (process.env.NODE_ENV === "development") {
   prisma.$on("query", (e) => {
     if (e.duration > 200) {
-      logger.warn({ query: e.query, duration: `${e.duration}ms` }, "⚠️  Slow query detected");
+      logger.warn(
+        { query: e.query, duration: `${e.duration}ms` },
+        "⚠️  Slow query detected"
+      );
     }
   });
 }

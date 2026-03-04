@@ -2,6 +2,7 @@
 
 > **The AI-Powered Learning & Exam Practice Platform for African Students**
 > *Built to beat uLesson and Tuteria with modern, intelligent technology.*
+> **Stack: Node.js 20 · TypeScript · Express · PostgreSQL · Prisma · Redis · Claude AI**
 
 ---
 
@@ -27,101 +28,86 @@ FlexAcademy is a **next-generation EdTech platform** targeting students from Pri
 
 ### 1. 🤖 FlexBot — AI Tutor (24/7)
 - Powered by **Claude (Anthropic)** for nuanced, exam-focused explanations
-- Streaming responses for real-time conversation feel
-- Remembers conversation context per session
-- Generates custom practice questions on demand
-- Speaks to Nigerian student context (relatable examples, pidgin-friendly)
+- Streaming responses via **Server-Sent Events (SSE)** for real-time feel
+- Maintains conversation context per session (persisted in PostgreSQL)
+- Generates custom practice questions on demand with full explanations
+- Contextualised for Nigerian students — relatable examples, exam-aware
 
 ### 2. 🧠 Adaptive Learning Engine
 - Tracks per-topic performance and adjusts difficulty dynamically
-- Identifies knowledge gaps from wrong answers
-- Builds personalized study plans per student
+- Identifies knowledge gaps from wrong answers across quiz attempts
+- Builds personalised study plans per student profile
 - Spaced repetition algorithm for flashcard review
 
 ### 3. 📊 AI Performance Analytics
-- After each quiz: AI-generated analysis of weak areas
+- After each quiz: AI-generated analysis of weak areas with recommendations
 - Weekly AI-written progress reports for students AND parents
 - Predicts exam readiness score (e.g. "75% WAEC ready")
-- Compares performance against national averages
+- Benchmarks performance against national averages
 
 ### 4. 🎮 Gamification Engine
-- XP points, badges, streaks, and leveling system
-- Daily/weekly leaderboards per subject and national rank
-- Study streak rewards (motivates consistency)
-- Challenge mode: compete with friends or the AI
+- XP points, badges, streaks, and levelling system
+- Daily/weekly/monthly leaderboards per subject and national rank
+- Study streak rewards for consistency
+- Challenge mode: compete with friends or beat the AI
 
-### 5. 📱 WhatsApp Study Bot
-- Students can practice questions and get explanations via WhatsApp
-- Daily question of the day delivered via WA
-- "Send me 5 WAEC Chemistry questions" — instant response
-- Massive reach since WhatsApp penetration > App store in Nigeria
+### 5. 📱 WhatsApp Study Bot (Phase 2)
+- Practice questions and explanations delivered via WhatsApp
+- Daily "Question of the Day" — no app download required
+- Massive reach: WhatsApp penetration > App Store in Nigeria
 
-### 6. 🎥 Live Classes + AI Moderation
-- Tutors can host live sessions via integrated video
-- AI auto-generates class notes from video transcription (Whisper API)
-- AI Q&A during sessions — students get instant answers alongside tutor
-- Recorded sessions with AI-generated chapter markers and summaries
+### 6. 🎥 Live Classes + AI Moderation (Phase 2)
+- Tutors host live sessions via integrated video
+- AI auto-generates class notes from transcription (Whisper API)
+- Recorded sessions with AI chapter markers and summaries
 
-### 7. 👨‍👩‍👧 Parent Dashboard
-- Real-time study time tracking
-- Weekly AI-written report cards
-- Low activity alerts via SMS/email
-- Subscription management for families
+### 7. 👨‍👩‍👧 Parent Dashboard (Phase 2)
+- Real-time study tracking and low-activity alerts
+- Weekly AI-written report cards via email/SMS
 
 ---
 
-## 🛠️ Backend Tech Stack
+## 🛠️ Tech Stack
 
 ### Core
-| Tool | Purpose | Why |
-|------|---------|-----|
-| **Node.js 20 LTS** | Runtime | Latest, fastest, native ESM |
-| **Express.js** | HTTP Framework | Battle-tested, flexible |
-| **PostgreSQL 16** | Primary Database | ACID, JSON support, full-text search |
-| **Prisma ORM** | DB Access Layer | Type-safe, excellent DX, migrations |
-| **Redis (ioredis)** | Caching + Rate Limiting + Sessions | Sub-ms reads |
+| Tool | Purpose |
+|------|---------|
+| **Node.js 20 LTS** | Runtime |
+| **TypeScript 5** | Type safety across the entire codebase |
+| **Express.js** | HTTP framework |
+| **PostgreSQL 16** | Primary relational database |
+| **Prisma ORM v5** | Type-safe DB access, migrations, Prisma Studio |
+| **Redis (ioredis)** | Caching, rate limit state, token storage |
 
 ### AI & Intelligence
 | Tool | Purpose |
 |------|---------|
-| **Anthropic Claude API** | AI Tutor, content generation, analysis |
-| **OpenAI API** | Embeddings, Whisper (audio transcription) |
+| **Anthropic Claude API** | FlexBot AI tutor, content generation, analysis |
+| **OpenAI API** | Embeddings, Whisper transcription (Phase 2) |
 | **Bull + Redis** | Background AI job queue |
 
 ### Auth & Security
 | Tool | Purpose |
 |------|---------|
-| **JWT (jsonwebtoken)** | Stateless auth |
-| **Passport.js** | OAuth strategies (Google) |
-| **bcryptjs** | Password hashing |
+| **jsonwebtoken** | Stateless JWT access + refresh token auth |
+| **Passport.js** | JWT strategy + Google OAuth 2.0 |
+| **bcryptjs** | Password hashing (cost 12) |
 | **Helmet** | HTTP security headers |
-| **express-rate-limit** | DDoS protection |
+| **express-rate-limit** | Per-route rate limiting |
+| **Zod** | Runtime validation with inferred TypeScript types |
 
-### Payments
-| Tool | Purpose |
-|------|---------|
-| **Stripe** | International cards |
-| **Paystack** | Nigerian cards + Bank transfer |
-
-### Communication
-| Tool | Purpose |
-|------|---------|
-| **Nodemailer** | Transactional emails |
-| **Socket.IO** | Real-time (live class, notifications) |
-| **Twilio / Termii** | SMS, WhatsApp API |
-
-### Dev Productivity (Lightning Fast)
+### Dev Productivity
 | Tool | Why It Makes You Fast |
 |------|-----------------------|
-| **Prisma Studio** | Visual DB explorer — no SQL needed for inspection |
-| **pino** | Structured logging, 5x faster than Winston |
-| **express-async-errors** | Zero try-catch boilerplate in controllers |
-| **Zod** | Runtime validation + TypeScript-like inference |
-| **nodemon** | Auto-restart on file changes |
-| **Faker.js** | Instant realistic seed data |
-| **Jest + Supertest** | Fast, reliable API testing |
-| **Swagger (swagger-jsdoc)** | Auto-generated Postman-compatible API docs |
-| **http-status-codes** | No magic numbers — `StatusCodes.OK` not `200` |
+| **tsx** | Run `.ts` files directly — no compile step in dev |
+| **tsx watch** | Hot reload for TypeScript (replaces ts-node-dev) |
+| **Prisma Studio** | Visual DB explorer — `npx prisma studio` |
+| **pino + pino-pretty** | Structured logging, 5x faster than Winston |
+| **express-async-errors** | No try/catch boilerplate in controllers |
+| **http-status-codes** | `StatusCodes.OK` not magic numbers |
+| **swagger-jsdoc** | API docs auto-generated from JSDoc comments |
+| **Faker.js** | Realistic seed data in seconds |
+| **ts-jest** | Jest with native TypeScript support |
 
 ---
 
@@ -130,87 +116,70 @@ FlexAcademy is a **next-generation EdTech platform** targeting students from Pri
 ```
 flexacademy/
 ├── prisma/
-│   ├── schema.prisma          # Full DB schema (15+ models)
-│   ├── seed.js                # Seed subjects, users, questions, badges
-│   └── migrations/            # Auto-generated migration history
+│   ├── schema.prisma              # Full DB schema (20+ models, all typed via Prisma)
+│   ├── seed.ts                    # TypeScript seed — subjects, users, questions, badges
+│   └── migrations/
 │
 ├── src/
-│   ├── server.js              # Entry point, graceful shutdown
-│   ├── app.js                 # Express app config, middleware, routes
+│   ├── server.ts                  # Entry point, graceful shutdown, startup checks
+│   ├── app.ts                     # Express app, middleware stack, route wiring
+│   │
+│   ├── types/
+│   │   └── index.ts               # Global types: Express augmentation, JWT, API shapes
 │   │
 │   ├── config/
-│   │   ├── database.js        # Prisma singleton + slow query logging
-│   │   ├── redis.js           # Redis client + cache helpers
-│   │   ├── passport.js        # JWT + Google OAuth strategies
-│   │   └── swagger.js         # Swagger/OpenAPI config
+│   │   ├── database.ts            # Prisma singleton + slow query logging
+│   │   ├── redis.ts               # Redis client + typed cache helpers
+│   │   ├── passport.ts            # JWT + Google OAuth strategies
+│   │   └── swagger.ts             # OpenAPI/Swagger config
 │   │
-│   ├── controllers/           # Request handlers (thin, no business logic)
-│   │   ├── auth.controller.js
-│   │   ├── user.controller.js
-│   │   ├── course.controller.js
-│   │   ├── quiz.controller.js
-│   │   ├── aiTutor.controller.js   ← Claude streaming AI tutor
-│   │   ├── leaderboard.controller.js
-│   │   └── admin.controller.js
+│   ├── controllers/               # Thin request handlers — no business logic
+│   │   ├── auth.controller.ts
+│   │   ├── aiTutor.controller.ts  ← Claude streaming + question gen + analysis
+│   │   ├── quiz.controller.ts
+│   │   └── ...
 │   │
-│   ├── services/              # Business logic layer
-│   │   ├── auth.service.js
-│   │   ├── email.service.js
-│   │   ├── ai.service.js      # Claude + OpenAI wrappers
-│   │   ├── gamification.service.js  # XP, badges, streaks
-│   │   ├── analytics.service.js
-│   │   └── payment.service.js
+│   ├── services/                  # Business logic layer (pure functions where possible)
+│   │   ├── email.service.ts
+│   │   ├── gamification.service.ts
+│   │   ├── analytics.service.ts
+│   │   └── payment.service.ts
 │   │
 │   ├── middlewares/
-│   │   ├── auth.middleware.js  # authenticate, requireRoles
-│   │   ├── rateLimiter.js
-│   │   ├── errorHandler.js
-│   │   ├── notFound.js
-│   │   └── validate.js        # Zod request validation
+│   │   ├── auth.middleware.ts     # authenticate, requireRoles, requireVerifiedEmail
+│   │   ├── errorHandler.ts        # Typed Prisma + Zod + ApiError mapping
+│   │   ├── rateLimiter.ts         # Global, auth, AI-specific rate limits
+│   │   ├── validate.ts            # Generic Zod schema validator
+│   │   └── notFound.ts
 │   │
-│   ├── routes/                # One file per resource
-│   │   ├── auth.routes.js
-│   │   ├── user.routes.js
-│   │   ├── subject.routes.js
-│   │   ├── course.routes.js
-│   │   ├── lesson.routes.js
-│   │   ├── quiz.routes.js
-│   │   ├── question.routes.js
-│   │   ├── aiTutor.routes.js
-│   │   ├── leaderboard.routes.js
-│   │   ├── subscription.routes.js
-│   │   ├── liveClass.routes.js
-│   │   ├── notification.routes.js
-│   │   ├── admin.routes.js
-│   │   └── webhook.routes.js
+│   ├── routes/                    # One file per resource, Swagger JSDoc annotated
+│   │   ├── auth.routes.ts
+│   │   ├── aiTutor.routes.ts
+│   │   └── ...
 │   │
-│   ├── validators/            # Zod schemas for request validation
-│   │   ├── auth.validator.js
-│   │   ├── quiz.validator.js
-│   │   └── question.validator.js
+│   ├── validators/
+│   │   └── index.ts               # Zod schemas + inferred TypeScript types
 │   │
-│   ├── jobs/                  # Bull queue workers
-│   │   ├── queue.js           # Bull queue setup
-│   │   ├── email.job.js
-│   │   ├── aiAnalysis.job.js
-│   │   └── leaderboard.job.js
+│   ├── jobs/                      # Bull queue workers
+│   │   ├── queue.ts
+│   │   ├── email.job.ts
+│   │   └── aiAnalysis.job.ts
 │   │
 │   └── utils/
-│       ├── ApiResponse.js     # Standardized response wrapper
-│       ├── ApiError.js        # Custom error class
-│       ├── tokens.js          # JWT generate/verify
-│       ├── logger.js          # Pino logger
-│       └── validateEnv.js     # Env var guard on startup
+│       ├── ApiResponse.ts         # Typed response wrappers
+│       ├── tokens.ts              # JWT generate/verify with full types
+│       ├── logger.ts              # Pino logger
+│       └── validateEnv.ts         # Startup env guard
 │
 ├── tests/
-│   ├── unit/                  # Service unit tests
-│   ├── integration/           # API integration tests (Supertest)
-│   └── e2e/                   # End-to-end flow tests
+│   ├── unit/
+│   ├── integration/               # Supertest API tests
+│   └── e2e/
 │
-├── docs/                      # Additional documentation
-├── .env.example               # All env vars documented
-├── .gitignore
-└── package.json
+├── tsconfig.json                  # Strict TS config with path aliases
+├── package.json
+├── .env.example
+└── README.md
 ```
 
 ---
@@ -225,30 +194,41 @@ flexacademy/
 ### Setup
 
 ```bash
-# 1. Clone and install
-git clone https://github.com/yourorg/flexacademy-backend
-cd flexacademy-backend
+# 1. Install dependencies
 npm install
 
-# 2. Environment
+# 2. Configure environment
 cp .env.example .env
-# Fill in your DATABASE_URL, JWT secrets, ANTHROPIC_API_KEY
+# Fill in: DATABASE_URL, JWT_SECRET, JWT_REFRESH_SECRET, ANTHROPIC_API_KEY
 
-# 3. Database
+# 3. Database setup
 npx prisma migrate dev --name init
 npx prisma generate
+
+# 4. Seed with sample data
 npm run prisma:seed
 
-# 4. Start dev server
+# 5. Start development server (TypeScript, hot reload)
 npm run dev
-# → API running at http://localhost:5000
-# → Swagger docs at http://localhost:5000/api/v1/docs
-# → Prisma Studio: npx prisma studio
+# → http://localhost:5000
+# → Swagger: http://localhost:5000/api/v1/docs
+# → DB GUI:  npx prisma studio
+```
+
+### Other Commands
+
+```bash
+npm run typecheck        # Type-check without compiling
+npm run build            # Compile TypeScript to dist/
+npm run lint             # ESLint with TypeScript rules
+npm test                 # Jest with ts-jest
+npm run test:coverage    # Coverage report
+npm run validate:env     # Check required env vars
 ```
 
 ---
 
-## 🗺️ API Endpoints (Phase 1)
+## 🗺️ API Routes (Phase 1)
 
 ### Auth
 ```
@@ -263,53 +243,61 @@ GET    /api/v1/auth/google
 GET    /api/v1/auth/google/callback
 ```
 
-### Content
+### AI Tutor (FlexBot)
 ```
-GET    /api/v1/subjects
-GET    /api/v1/courses?subject=&grade=&difficulty=
-GET    /api/v1/courses/:id
-POST   /api/v1/courses/:id/enroll
-GET    /api/v1/lessons/:id
-POST   /api/v1/lessons/:id/complete
-```
-
-### Quizzes
-```
-GET    /api/v1/quizzes?subject=&exam=&year=
-POST   /api/v1/quizzes/:id/start
-POST   /api/v1/quizzes/attempts/:attemptId/submit
-GET    /api/v1/quizzes/attempts/:attemptId/results
-```
-
-### AI Tutor
-```
-POST   /api/v1/ai-tutor/chat           (streaming SSE)
+POST   /api/v1/ai-tutor/chat               ← SSE streaming
 POST   /api/v1/ai-tutor/generate-questions
 GET    /api/v1/ai-tutor/analyze
 GET    /api/v1/ai-tutor/sessions
 ```
 
-### Progress & Gamification
+### Content
 ```
-GET    /api/v1/progress/me
+GET    /api/v1/subjects
+GET    /api/v1/courses?subject=&grade=&difficulty=
+POST   /api/v1/courses/:id/enroll
+GET    /api/v1/lessons/:id
+POST   /api/v1/lessons/:id/complete
+```
+
+### Quizzes & Practice
+```
+GET    /api/v1/quizzes?subject=&exam=&year=
+POST   /api/v1/quizzes/:id/start
+POST   /api/v1/quizzes/attempts/:id/submit
+GET    /api/v1/quizzes/attempts/:id/results
+```
+
+### Gamification
+```
 GET    /api/v1/leaderboard?period=weekly&subject=
 GET    /api/v1/users/me/badges
 GET    /api/v1/users/me/streak
+GET    /api/v1/progress/me
 ```
 
 ---
 
 ## 🔮 Phase 2 Roadmap
 
-- [ ] WhatsApp Study Bot (Twilio / Meta Cloud API)
+- [ ] WhatsApp Study Bot (Meta Cloud API / Twilio)
 - [ ] AI-generated lesson summaries from uploaded PDFs
-- [ ] Adaptive quiz engine (difficulty auto-adjusts mid-quiz)
-- [ ] Parent dashboard with weekly AI reports
-- [ ] Tutor marketplace with booking + payments
-- [ ] Offline mode with service worker caching
-- [ ] Exam countdown + personalized study plan generator
+- [ ] Adaptive quiz engine (real-time difficulty adjustment)
+- [ ] Parent dashboard + weekly AI report cards
+- [ ] Tutor marketplace with booking and payments
+- [ ] Offline mode (Service Worker + local sync)
 - [ ] National mock exam simulation (timed, proctored)
 - [ ] School/institution B2B licensing module
+- [ ] React Native mobile app
+
+---
+
+## 🧾 Seed Credentials
+
+| Role | Email | Password |
+|------|-------|----------|
+| Super Admin | admin@flexacademy.com | Admin@1234 |
+| Demo Student | demo@flexacademy.com | Student@1234 |
 
 ---
 
