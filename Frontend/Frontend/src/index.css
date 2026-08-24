@@ -1,0 +1,374 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Google Fonts ───────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DARK MODE — default, applied via [data-theme="dark"] or :root
+   ═══════════════════════════════════════════════════════════════════ */
+:root,
+[data-theme='dark'] {
+  /* Backgrounds */
+  --bg-base:          #0c0e14;
+  --bg-surface:       #13161f;
+  --bg-elevated:      #1a1e2e;
+  --bg-subtle:        #1e2235;
+
+  /* Accent — emerald */
+  --accent-primary:   #6ee7b7;
+  --accent-hover:     #a7f3d0;
+  --accent-glow:      rgba(110, 231, 183, 0.15);
+  --accent-muted:     #2d6a52;
+
+  /* Semantic */
+  --color-xp:         #facc15;
+  --color-danger:     #f87171;
+  --color-warning:    #fb923c;
+  --color-success:    #34d399;
+  --color-info:       #60a5fa;
+
+  /* Text */
+  --text-primary:     #f1f5f9;
+  --text-secondary:   #94a3b8;
+  --text-muted:       #475569;
+
+  /* Borders */
+  --border-subtle:    rgba(255, 255, 255, 0.06);
+  --border-active:    rgba(110, 231, 183, 0.3);
+
+  /* Shadows */
+  --shadow-card:      0 4px 24px rgba(0, 0, 0, 0.4);
+  --shadow-card-hover:0 8px 40px rgba(0, 0, 0, 0.55);
+  --shadow-glow:      0 0 24px rgba(110, 231, 183, 0.2);
+  --shadow-glow-sm:   0 0 12px rgba(110, 231, 183, 0.15);
+
+  /* Navbar */
+  --navbar-bg:        rgba(12, 14, 20, 0.90);
+  --navbar-border:    rgba(255, 255, 255, 0.06);
+
+  /* Input */
+  --input-bg:         #1a1e2e;
+  --input-border:     rgba(255, 255, 255, 0.06);
+  --input-focus:      rgba(110, 231, 183, 0.25);
+
+  /* Toast */
+  --toast-bg:         #1a1e2e;
+  --toast-color:      #f1f5f9;
+  --toast-border:     rgba(255, 255, 255, 0.08);
+
+  /* Utilities */
+  --transition-base:  150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow:  300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   LIGHT MODE — applied via [data-theme="light"]
+   All components that use CSS vars automatically switch.
+   ═══════════════════════════════════════════════════════════════════ */
+[data-theme='light'] {
+  /* Backgrounds */
+  --bg-base:          #f0f4f8;
+  --bg-surface:       #ffffff;
+  --bg-elevated:      #f8fafc;
+  --bg-subtle:        #e2eaf3;
+
+  /* Accent — deeper emerald for contrast on white */
+  --accent-primary:   #059669;
+  --accent-hover:     #047857;
+  --accent-glow:      rgba(5, 150, 105, 0.10);
+  --accent-muted:     #d1fae5;
+
+  /* Semantic — richer for light backgrounds */
+  --color-xp:         #d97706;
+  --color-danger:     #dc2626;
+  --color-warning:    #ea580c;
+  --color-success:    #059669;
+  --color-info:       #2563eb;
+
+  /* Text */
+  --text-primary:     #0f172a;
+  --text-secondary:   #334155;
+  --text-muted:       #94a3b8;
+
+  /* Borders */
+  --border-subtle:    rgba(0, 0, 0, 0.08);
+  --border-active:    rgba(5, 150, 105, 0.35);
+
+  /* Shadows — softer on white */
+  --shadow-card:      0 2px 16px rgba(0, 0, 0, 0.07);
+  --shadow-card-hover:0 6px 32px rgba(0, 0, 0, 0.12);
+  --shadow-glow:      0 0 24px rgba(5, 150, 105, 0.18);
+  --shadow-glow-sm:   0 0 12px rgba(5, 150, 105, 0.12);
+
+  /* Navbar */
+  --navbar-bg:        rgba(240, 244, 248, 0.92);
+  --navbar-border:    rgba(0, 0, 0, 0.08);
+
+  /* Input */
+  --input-bg:         #ffffff;
+  --input-border:     rgba(0, 0, 0, 0.10);
+  --input-focus:      rgba(5, 150, 105, 0.25);
+
+  /* Toast */
+  --toast-bg:         #ffffff;
+  --toast-color:      #0f172a;
+  --toast-border:     rgba(0, 0, 0, 0.08);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   BASE RESETS
+   ═══════════════════════════════════════════════════════════════════ */
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html {
+    /* The single number the whole type scale derives from. Every Tailwind text
+       size is rem-based, so changing this moves the platform coherently rather
+       than component by component. */
+    font-size: 18px;
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+    /* Smooth theme switching — transitions on html so every child inherits */
+    transition: background-color 0.2s ease;
+  }
+
+  body {
+    @apply bg-base text-text-primary font-body antialiased;
+    min-height: 100dvh;
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    font-family: 'DM Sans', sans-serif;
+    line-height: 1.6;
+    transition: background-color 0.2s ease, color 0.15s ease;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Syne', sans-serif;
+    @apply font-semibold leading-tight tracking-tight;
+    color: var(--text-primary);
+  }
+
+  code, pre, kbd { font-family: 'JetBrains Mono', monospace; }
+
+  :focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg-base); }
+  ::-webkit-scrollbar-thumb { background: var(--bg-subtle); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--accent-muted); }
+
+  ::selection {
+    background: var(--accent-glow);
+    color: var(--accent-primary);
+  }
+
+  /* Autofill — override browser's yellow background using CSS var */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0px 1000px var(--input-bg) inset;
+    -webkit-text-fill-color: var(--text-primary);
+    caret-color: var(--text-primary);
+    transition: background-color 5000s ease-in-out 0s;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   UTILITY LAYER
+   ═══════════════════════════════════════════════════════════════════ */
+@layer utilities {
+  /* Grid texture — shifts color in light mode */
+  .bg-grid {
+    background-image: radial-gradient(circle, rgba(110, 231, 183, 0.04) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  [data-theme='light'] .bg-grid {
+    background-image: radial-gradient(circle, rgba(5, 150, 105, 0.05) 1px, transparent 1px);
+  }
+
+  /* Glassmorphism */
+  .glass {
+    background: rgba(19, 22, 31, 0.80);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border-subtle);
+  }
+  [data-theme='light'] .glass {
+    background: rgba(255, 255, 255, 0.82);
+  }
+
+  /* Gradient text — adapts to theme accent */
+  .text-gradient {
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-hover));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Glow shadows */
+  .shadow-glow    { box-shadow: var(--shadow-glow); }
+  .shadow-glow-sm { box-shadow: var(--shadow-glow-sm); }
+  .shadow-accent  { box-shadow: 0 0 20px var(--accent-glow); }
+
+  /* Elite shimmer */
+  .shimmer {
+    background: linear-gradient(90deg, var(--color-xp) 0%, #fde68a 25%, var(--color-xp) 50%, #fde68a 75%, var(--color-xp) 100%);
+    background-size: 200% auto;
+    animation: shimmer 2s linear infinite;
+  }
+
+  /* Sidebar active indicator */
+  .sidebar-active-bar { position: relative; }
+  .sidebar-active-bar::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 50%;
+    transform: translateY(-50%);
+    width: 3px; height: 60%;
+    background: var(--accent-primary);
+    border-radius: 0 2px 2px 0;
+    box-shadow: 0 0 8px var(--accent-primary);
+  }
+
+  /* Password strength */
+  .strength-bar {
+    height: 3px;
+    border-radius: 2px;
+    transition: width 300ms ease, background-color 300ms ease;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   KATEX — math rendered in AI replies
+   KaTeX ships its own light-mode colours and can render very wide display
+   equations; both need taming inside a chat bubble.
+   ═══════════════════════════════════════════════════════════════════ */
+.katex {
+  color: inherit;              /* follow the bubble's text colour, not KaTeX's */
+  font-size: 1.05em;           /* KaTeX runs small next to DM Sans */
+}
+
+/* Display math ($$…$$): scroll horizontally instead of widening the bubble */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.5rem 0;
+  margin: 0.75rem 0;
+}
+.katex-display > .katex {
+  white-space: nowrap;
+}
+
+/* A half-streamed equation shouldn't flash red mid-token */
+.katex-error {
+  color: var(--text-muted) !important;
+  border-bottom: 1px dotted var(--text-muted);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   COMPONENT LAYER
+   ═══════════════════════════════════════════════════════════════════ */
+@layer components {
+  /* Base card — uses CSS vars, theme-aware automatically */
+  .card {
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    @apply rounded-xl;
+    box-shadow: var(--shadow-card);
+  }
+  .card-hover {
+    @apply card transition-all duration-200;
+  }
+  .card-hover:hover {
+    box-shadow: var(--shadow-card-hover);
+    @apply -translate-y-0.5;
+    border-color: var(--border-active);
+  }
+
+  /* Input */
+  .input-base {
+    width: 100%;
+    background-color: var(--input-bg);
+    border: 1px solid var(--input-border);
+    @apply rounded-lg px-3.5 py-2.5 text-sm font-body;
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .input-base::placeholder { color: var(--text-muted); }
+  .input-base:focus {
+    border-color: var(--border-active);
+    box-shadow: 0 0 0 3px var(--input-focus);
+  }
+
+  .label-base {
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.375rem;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  .exam-chip {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
+    background-color: var(--accent-glow);
+    color: var(--accent-primary);
+    border: 1px solid var(--border-active);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   KEYFRAME ANIMATIONS
+   ═══════════════════════════════════════════════════════════════════ */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes bounceIn {
+  0%   { transform: scale(0.8); opacity: 0; }
+  60%  { transform: scale(1.05); }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0   rgba(110, 231, 183, 0.4); }
+  50%       { box-shadow: 0 0 0 8px rgba(110, 231, 183, 0); }
+}
+
+.animate-fade-in    { animation: fadeIn      0.3s ease-out; }
+.animate-slide-up   { animation: slideUp     0.3s ease-out; }
+.animate-slide-left { animation: slideInLeft 0.3s ease-out; }
+.animate-bounce-in  { animation: bounceIn    0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.animate-pulse-glow { animation: pulse-glow  2s ease-in-out infinite; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THEME TRANSITION
+   Smooth colour switch on all background/text/border properties.
+   Does NOT transition transform or opacity — those are Framer Motion's job.
+   ═══════════════════════════════════════════════════════════════════ */
+*:not([class*='animate-']):not([style*='transform']):not([style*='opacity']) {
+  transition-property: background-color, border-color, color, box-shadow, fill, stroke;
+  transition-duration: 0.18s;
+  transition-timing-function: ease;
+}

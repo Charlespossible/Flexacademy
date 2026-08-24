@@ -1,5 +1,10 @@
 import { Router } from "express";
+import { authenticate } from "../middlewares/auth.middleware";
+import { getLeaderboard } from "../controllers/leaderboard.controller";
 
-const stub = Router();
-stub.all("*", (_req, res) => res.status(501).json({ success: false, message: "Not implemented yet." }));
-export default stub;
+const router = Router();
+router.use(authenticate);
+
+router.get("/", getLeaderboard);
+
+export default router;

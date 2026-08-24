@@ -1,18 +1,13 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { Request, Response } from "express";
 import { StatusCodes } from "http-status-codes";
+import Anthropic from "@anthropic-ai/sdk";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../config/database";
 import { ApiResponse, ApiError } from "../utils/ApiResponse";
 import { logger } from "../utils/logger";
-import {
-  AiChatBody,
-  ChatMessage,
-  GenerateQuestionsBody,
-  GeneratedQuestion,
-  PaginationQuery,
-} from "../types";
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+import { AiChatBody, ChatMessage, GenerateQuestionsBody } from "../types";
+import { runGapDetection, checkAiTutorGapSignal } from "../services/gapDetection.service";
+import { anthropic, FAST_PARAMS, extractText } from "../config/anthropic";
 
 const FLEXBOT_SYSTEM_PROMPT = `You are FlexBot, an expert AI tutor for African students preparing for WAEC, JAMB, NECO, IGCSE, and other major exams.
 
@@ -33,71 +28,81 @@ Your capabilities:
 
 Always identify the exam type when relevant (WAEC, JAMB, etc.) and tailor advice accordingly.`;
 
-// ─── Chat (Streaming SSE) ─────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/v1/ai-tutor/chat — Stream AI tutor chat with SSE
+// ─────────────────────────────────────────────────────────────────────────────
 export const chat = async (
   req: Request<object, object, AiChatBody>,
   res: Response
 ): Promise<void> => {
   const { sessionId, message, subject, topic } = req.body;
-  const userId = req.user!.id;
+  const userId = req.user?.id;
 
-  const subscription = await prisma.subscription.findUnique({ where: { userId } });
-  const aiEnabled =
-    ["PRO", "ELITE", "BASIC"].includes(subscription?.tier ?? "") ||
-    process.env.ENABLE_AI_TUTOR === "true";
-
-  if (!aiEnabled) {
-    throw new ApiError(
-      StatusCodes.FORBIDDEN,
-      "AI Tutor requires a Basic plan or higher. Upgrade to unlock FlexBot!"
-    );
+  if (!userId) throw ApiError(StatusCodes.UNAUTHORIZED, "Not authenticated.");
+  if (!message?.trim()) {
+    throw ApiError(StatusCodes.BAD_REQUEST, "Message cannot be empty.");
   }
-
-  let session = sessionId
-    ? await prisma.aiTutorSession.findFirst({ where: { id: sessionId, userId } })
-    : null;
-
-  if (sessionId && !session) {
-    throw new ApiError(StatusCodes.NOT_FOUND, "AI session not found.");
-  }
-
-  if (!session) {
-    session = await prisma.aiTutorSession.create({
-      data: {
-        userId,
-        subject: subject ?? null,
-        topic: topic ?? null,
-        messages: [],
-        tokensUsed: 0,
-      },
-    });
-  }
-
-  const history = (session.messages as ChatMessage[]) ?? [];
-
-  const messages: Anthropic.MessageParam[] = [
-    ...history.map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    })),
-    { role: "user" as const, content: message },
-  ];
-
-  // Set SSE headers
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.flushHeaders();
-
-  let fullResponse = "";
-  let totalTokens = 0;
 
   try {
+    // Check subscription tier
+    const subscription = await prisma.subscription.findUnique({ where: { userId } });
+    const aiEnabled =
+      ["PRO", "ELITE", "BASIC"].includes(subscription?.tier ?? "") ||
+      process.env.ENABLE_AI_TUTOR === "true";
+
+    if (!aiEnabled) {
+      throw ApiError(
+        StatusCodes.FORBIDDEN,
+        "AI Tutor requires a Basic plan or higher."
+      );
+    }
+
+    // Fetch or create session
+    let session = sessionId
+      ? await prisma.aiTutorSession.findFirst({ where: { id: sessionId, userId } })
+      : null;
+
+    if (sessionId && !session) {
+      throw ApiError(StatusCodes.NOT_FOUND, "AI session not found.");
+    }
+
+    if (!session) {
+      session = await prisma.aiTutorSession.create({
+        data: {
+          userId,
+          subject: subject ?? null,
+          topic: topic ?? null,
+          messages: [],
+          tokensUsed: 0,
+        },
+      });
+    }
+
+  const history = (session.messages as unknown as ChatMessage[]) ?? [];
+
+    const messages = [
+      ...history.map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      })),
+      { role: "user" as const, content: message },
+    ];
+
+    // Set SSE headers
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.flushHeaders();
+
+    let fullResponse = "";
+    let totalTokens = 0;
+
     const stream = anthropic.messages.stream({
-      model: process.env.ANTHROPIC_MODEL ?? "claude-3-5-sonnet-20241022",
+      ...FAST_PARAMS,
       max_tokens: 1500,
       system: FLEXBOT_SYSTEM_PROMPT,
-      messages,
+      messages: messages as Anthropic.MessageParam[],
     });
 
     for await (const chunk of stream) {
@@ -118,21 +123,37 @@ export const chat = async (
 
     const updatedHistory: ChatMessage[] = [
       ...history,
-      { role: "user", content: message, timestamp: new Date().toISOString() },
+      { role: "user" as const, content: message, timestamp: new Date().toISOString() },
       {
-        role: "assistant",
+        role: "assistant" as const,
         content: fullResponse,
         timestamp: new Date().toISOString(),
       },
     ].slice(-20); // Keep last 20 messages
 
+    // Convert typed array to plain objects for Prisma Json field
+    const plainMessages = updatedHistory.map((m) => ({
+      role: m.role,
+      content: m.content,
+      timestamp: m.timestamp,
+    }));
+
     await prisma.aiTutorSession.update({
       where: { id: session.id },
       data: {
-        messages: updatedHistory,
+        messages: plainMessages as unknown as Prisma.InputJsonValue,
         tokensUsed: { increment: totalTokens },
       },
     });
+
+    // Fire-and-forget: if a student keeps asking FlexBot about the same topic,
+    // that repetition is itself a gap signal — check and trigger detection if needed.
+    const topicToCheck = topic ?? session.topic;
+    if (topicToCheck && !session.insightTriggered) {
+      checkAiTutorGapSignal(userId, topicToCheck, session.id).catch((err) =>
+        logger.warn({ err, userId }, "AI Tutor gap signal check failed")
+      );
+    }
 
     res.write(
       `data: ${JSON.stringify({ type: "done", sessionId: session.id, tokensUsed: totalTokens })}\n\n`
@@ -141,179 +162,297 @@ export const chat = async (
   } catch (error) {
     logger.error({ error }, "AI Tutor stream error");
     res.write(
-      `data: ${JSON.stringify({ type: "error", message: "AI service unavailable" })}\n\n`
+      `data: ${JSON.stringify({ type: "error", message: "AI service error" })}\n\n`
     );
     res.end();
   }
 };
 
-// ─── Generate Practice Questions ──────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/v1/ai-tutor/generate-questions — Generate AI practice questions
+// ─────────────────────────────────────────────────────────────────────────────
 export const generatePracticeQuestions = async (
   req: Request<object, object, GenerateQuestionsBody>,
   res: Response
 ): Promise<void> => {
+  const userId = req.user?.id;
+  if (!userId) throw ApiError(StatusCodes.UNAUTHORIZED, "Not authenticated.");
+
   const { subject, topic, examCategory, difficulty, count = 5 } = req.body;
 
-  const prompt = `Generate ${count} ${difficulty ?? "INTERMEDIATE"} level ${examCategory ?? "exam"} practice questions for the topic: "${topic}" in ${subject}.
+  if (!subject || !topic) {
+    throw ApiError(StatusCodes.BAD_REQUEST, "Subject and topic are required.");
+  }
 
-Return ONLY a valid JSON array with this exact structure:
+  const questionCount = Math.min(count, 20);
+
+  try {
+    const prompt = `Generate ${questionCount} ${difficulty ?? "INTERMEDIATE"} level ${examCategory ?? "exam"} practice questions for "${topic}" in ${subject}.
+
+Return ONLY valid JSON array (no markdown):
 [
   {
-    "body": "Question text here",
+    "body": "Question text",
     "options": [
-      {"id": "A", "text": "Option text", "isCorrect": false},
-      {"id": "B", "text": "Option text", "isCorrect": true},
-      {"id": "C", "text": "Option text", "isCorrect": false},
-      {"id": "D", "text": "Option text", "isCorrect": false}
+      {"id": "A", "text": "Option A", "isCorrect": false},
+      {"id": "B", "text": "Option B", "isCorrect": true},
+      {"id": "C", "text": "Option C", "isCorrect": false},
+      {"id": "D", "text": "Option D", "isCorrect": false}
     ],
-    "explanation": "Detailed explanation of the correct answer",
+    "explanation": "Explanation",
     "difficulty": "${difficulty ?? "INTERMEDIATE"}"
   }
-]
+]`;
 
-Ensure questions are exam-style, accurate, and well-explained. Return JSON only — no markdown fences.`;
+    const response = await anthropic.messages.create({
+      ...FAST_PARAMS,
+      max_tokens: 3000,
+      messages: [{ role: "user", content: prompt }],
+    });
 
-  const response = await anthropic.messages.create({
-    model: process.env.ANTHROPIC_MODEL ?? "claude-3-5-sonnet-20241022",
-    max_tokens: 3000,
-    messages: [{ role: "user", content: prompt }],
-  });
+    const text = extractText(response);
+    if (text === null) {
+      throw ApiError(StatusCodes.INTERNAL_SERVER_ERROR, "Invalid AI response.");
+    }
 
-  const content = response.content[0];
-  if (content.type !== "text") {
-    throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, "Unexpected AI response format.");
-  }
+    const raw = text.replace(/```json|```/g, "").trim();
+    const jsonMatch = raw.match(/\[[\s\S]*\]/);
 
-  const raw = content.text.replace(/```json|```/g, "").trim();
-  const jsonMatch = raw.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+      throw ApiError(
+        StatusCodes.INTERNAL_SERVER_ERROR,
+        "Failed to parse generated questions."
+      );
+    }
 
-  if (!jsonMatch) {
-    throw new ApiError(
-      StatusCodes.INTERNAL_SERVER_ERROR,
-      "Failed to parse AI-generated questions."
-    );
-  }
+    const questions = JSON.parse(jsonMatch[0]);
 
-  const questions = JSON.parse(jsonMatch[0]) as GeneratedQuestion[];
-
-  res
-    .status(StatusCodes.OK)
-    .json(
+    res.status(StatusCodes.CREATED).json(
       ApiResponse.success(
         { questions },
         `${questions.length} practice questions generated`
       )
     );
+  } catch (error) {
+    logger.error({ error, subject, topic }, "Question generation error");
+    throw ApiError(StatusCodes.INTERNAL_SERVER_ERROR, "Failed to generate questions.");
+  }
 };
 
-// ─── AI Performance Analysis ──────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/v1/ai-tutor/analyze — Analyze student performance
+// ─────────────────────────────────────────────────────────────────────────────
 export const analyzePerformance = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  const userId = req.user!.id;
+  const userId = req.user?.id;
+  if (!userId) throw ApiError(StatusCodes.UNAUTHORIZED, "Not authenticated.");
 
-  const attempts = await prisma.quizAttempt.findMany({
-    where: { userId },
-    include: {
-      quiz: { select: { title: true, examCategory: true } },
-      answers: {
-        include: {
-          question: { select: { topicId: true, difficulty: true } },
-        },
+  try {
+    // Fetch user's recent quiz/exam attempts
+    const [quizAttempts, examSimulations, topicMastery] = await Promise.all([
+      prisma.quizAttempt.findMany({
+        where: { userId },
+        orderBy: { completedAt: "desc" },
+        take: 10,
+        include: { quiz: { select: { title: true, examCategory: true } } },
+      }),
+      prisma.examSimulation.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+      }),
+      prisma.topicMastery.findMany({
+        where: { userId },
+        orderBy: { masteryLevel: "asc" },
+        take: 10,
+      }),
+    ]);
+
+    // Prepare analysis data
+    const analysisData: { 
+      quizStats: { totalAttempts: number; averageScore: number }; 
+      examStats: { totalSimulations: number; averageScore: number }; 
+      weakAreas: unknown[]; 
+      strongAreas: unknown[];
+      insight?: string;
+    } = {
+      quizStats: {
+        totalAttempts: quizAttempts.length,
+        averageScore:
+          quizAttempts.length > 0
+            ? Math.round(
+                quizAttempts.reduce((sum, q) => sum + Number(q.percentage), 0) /
+                  quizAttempts.length
+              )
+            : 0,
       },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 10,
-  });
+      examStats: {
+        totalSimulations: examSimulations.length,
+        averageScore:
+          examSimulations.length > 0
+            ? Math.round(
+                examSimulations.reduce(
+                  (sum, e) => sum + (e.percentage ? Number(e.percentage) : 0),
+                  0
+                ) / examSimulations.length
+              )
+            : 0,
+      },
+      weakAreas: topicMastery.slice(0, 5),
+      strongAreas: topicMastery.slice(-5),
+    };
 
-  if (attempts.length === 0) {
-    res
-      .status(StatusCodes.OK)
-      .json(
-        ApiResponse.success(
-          { analysis: null },
-          "No attempts found. Take some quizzes first!"
-        )
+    // Generate AI insight
+    if (analysisData.weakAreas.length > 0) {
+      const weakAreaNames = analysisData.weakAreas
+        .map((t: unknown) => {
+          const topic = t as { topicId: string; masteryLevel: number };
+          return `Topic ${topic.topicId}: ${topic.masteryLevel}%`;
+        })
+        .join(", ");
+
+      const insightPrompt = `Based on this student's performance data, provide one brief actionable insight:
+- Average quiz score: ${analysisData.quizStats.averageScore}%
+- Average exam simulation score: ${analysisData.examStats.averageScore}%
+- Weakest topics: ${weakAreaNames}
+
+Give 1-2 sentences of advice for improvement.`;
+
+      const insight = await anthropic.messages.create({
+        ...FAST_PARAMS,
+        max_tokens: 200,
+        messages: [{ role: "user", content: insightPrompt }],
+      });
+
+      const insightText = extractText(insight);
+      if (insightText !== null) {
+        analysisData.insight = insightText;
+      }
+
+      // Persist gaps and generate tutor briefs in the background
+      runGapDetection(userId).catch((err) =>
+        logger.warn({ err, userId }, "analyzePerformance: background gap detection failed")
       );
-    return;
-  }
+    }
 
-  const summary = attempts.map((a) => ({
-    quiz: a.quiz.title,
-    score: `${a.percentage}%`,
-    passed: a.isPassed,
-    date: a.createdAt,
-    wrongAnswers: a.answers.filter((ans) => !ans.isCorrect).length,
-    totalQuestions: a.answers.length,
-  }));
+    logger.debug({ userId }, "Performance analysis completed");
 
-  const prompt = `You are an academic performance analyst. Analyze this student's quiz performance data and provide a structured, encouraging analysis.
-
-Performance Data:
-${JSON.stringify(summary, null, 2)}
-
-Provide:
-1. Overall performance summary (2-3 sentences)
-2. Key strengths identified
-3. Top 3 areas needing improvement
-4. Specific study recommendations
-5. A motivational closing message
-
-Use Markdown formatting. Be specific and actionable.`;
-
-  const response = await anthropic.messages.create({
-    model: process.env.ANTHROPIC_MODEL ?? "claude-3-5-sonnet-20241022",
-    max_tokens: 1000,
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  const analysis =
-    response.content[0].type === "text" ? response.content[0].text : "";
-
-  await prisma.quizAttempt.update({
-    where: { id: attempts[0].id },
-    data: { aiAnalysis: analysis },
-  });
-
-  res
-    .status(StatusCodes.OK)
-    .json(
-      ApiResponse.success(
-        { analysis, attemptsAnalyzed: attempts.length },
-        "Analysis complete"
-      )
+    res.status(StatusCodes.OK).json(
+      ApiResponse.success(analysisData, "Performance analysis retrieved successfully")
     );
+  } catch (error) {
+    logger.error({ userId: req.user?.id, error }, "Performance analysis error");
+    throw ApiError(StatusCodes.INTERNAL_SERVER_ERROR, "Failed to analyze performance.");
+  }
 };
 
-// ─── List AI Sessions ─────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/v1/ai-tutor/sessions — Fetch AI tutor session history
+// ─────────────────────────────────────────────────────────────────────────────
 export const getSessions = async (
-  req: Request<object, object, object, PaginationQuery>,
+  req: Request<object, object, object, { page?: string; limit?: string }>,
   res: Response
 ): Promise<void> => {
-  const page = Number(req.query.page ?? 1);
-  const limit = Number(req.query.limit ?? 10);
+  const userId = req.user?.id;
+  if (!userId) throw ApiError(StatusCodes.UNAUTHORIZED, "Not authenticated.");
+
+  const page = Math.max(Number(req.query.page) || 1, 1);
+  const limit = Math.min(Number(req.query.limit) || 20, 100);
   const skip = (page - 1) * limit;
 
-  const [sessions, total] = await Promise.all([
+  const [rows, total] = await Promise.all([
     prisma.aiTutorSession.findMany({
-      where: { userId: req.user!.id },
+      where: { userId },
+      orderBy: { updatedAt: "desc" },
+      skip,
+      take: limit,
       select: {
         id: true,
         subject: true,
         topic: true,
-        tokensUsed: true,
         createdAt: true,
         updatedAt: true,
+        tokensUsed: true,
+        messages: true,
       },
-      orderBy: { updatedAt: "desc" },
-      skip,
-      take: limit,
     }),
-    prisma.aiTutorSession.count({ where: { userId: req.user!.id } }),
+    prisma.aiTutorSession.count({ where: { userId } }),
   ]);
+
+  // Derive a title from the first user message so the sidebar has something
+  // readable. The raw messages are stripped here — fetch one session by id to
+  // get the full transcript.
+  const sessions = rows.map(({ messages, ...rest }) => {
+    const history = (messages as unknown as ChatMessage[]) ?? [];
+    const firstUser = history.find((m) => m.role === "user");
+    const preview = firstUser?.content.replace(/\s+/g, " ").trim() ?? "";
+    return {
+      ...rest,
+      messageCount: history.length,
+      preview: preview.length > 80 ? `${preview.slice(0, 80)}…` : preview,
+    };
+  });
+
+  logger.debug({ userId, count: sessions.length }, "AI sessions fetched");
 
   res
     .status(StatusCodes.OK)
     .json(ApiResponse.paginated(sessions, { total, page, limit }));
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/v1/ai-tutor/sessions/:id — full transcript for one session
+// ─────────────────────────────────────────────────────────────────────────────
+export const getSession = async (
+  req: Request<{ id: string }>,
+  res: Response
+): Promise<void> => {
+  const userId = req.user?.id;
+  if (!userId) throw ApiError(StatusCodes.UNAUTHORIZED, "Not authenticated.");
+
+  // Scoped by userId as well as id — a valid session id belonging to another
+  // student must not be readable.
+  const session = await prisma.aiTutorSession.findFirst({
+    where: { id: req.params.id, userId },
+    select: {
+      id: true,
+      subject: true,
+      topic: true,
+      createdAt: true,
+      updatedAt: true,
+      tokensUsed: true,
+      messages: true,
+    },
+  });
+
+  if (!session) throw ApiError(StatusCodes.NOT_FOUND, "AI session not found.");
+
+  const messages = (session.messages as unknown as ChatMessage[]) ?? [];
+
+  res.status(StatusCodes.OK).json(
+    ApiResponse.success({ ...session, messages }, "Session retrieved")
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/v1/ai-tutor/sessions/:id — remove a conversation
+// ─────────────────────────────────────────────────────────────────────────────
+export const deleteSession = async (
+  req: Request<{ id: string }>,
+  res: Response
+): Promise<void> => {
+  const userId = req.user?.id;
+  if (!userId) throw ApiError(StatusCodes.UNAUTHORIZED, "Not authenticated.");
+
+  const { count } = await prisma.aiTutorSession.deleteMany({
+    where: { id: req.params.id, userId },
+  });
+
+  if (count === 0) throw ApiError(StatusCodes.NOT_FOUND, "AI session not found.");
+
+  logger.debug({ userId, sessionId: req.params.id }, "AI session deleted");
+
+  res.status(StatusCodes.OK).json(ApiResponse.success(null, "Session deleted"));
 };

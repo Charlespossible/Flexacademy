@@ -1,5 +1,4 @@
 import pino, { Logger } from "pino";
-import { StreamEntry } from "pino";
 
 export const logger: Logger = pino({
   level: process.env.LOG_LEVEL ?? "info",

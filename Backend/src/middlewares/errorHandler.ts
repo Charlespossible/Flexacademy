@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
 import { StatusCodes } from "http-status-codes";
-import { ApiError } from "../utils/ApiResponse";
+import { isApiError } from "../utils/ApiResponse";
 import { logger } from "../utils/logger";
 
 export const errorHandler = (
@@ -12,15 +12,24 @@ export const errorHandler = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _next: NextFunction
 ): void => {
-  let statusCode = StatusCodes.INTERNAL_SERVER_ERROR;
-  let message = "Internal Server Error";
+  // Known operational API error — created by createApiError()
+  if (isApiError(err)) {
+    res.status(err.statusCode).json({ success: false, message: err.message });
+    return;
+  }
 
-  // Known API error
-  if (err instanceof ApiError) {
-    statusCode = err.statusCode;
-    message = err.message;
-
-    res.status(statusCode).json({ success: false, message });
+  // Malformed JSON body — express.json() throws a SyntaxError carrying the raw
+  // body. That is a client mistake, not a server fault, so it must not surface
+  // as a 500 (which would also make it look like an outage in monitoring).
+  if (
+    err instanceof SyntaxError &&
+    "body" in err &&
+    (err as SyntaxError & { status?: number }).status === 400
+  ) {
+    res.status(StatusCodes.BAD_REQUEST).json({
+      success: false,
+      message: "Request body is not valid JSON.",
+    });
     return;
   }
 
@@ -39,6 +48,9 @@ export const errorHandler = (
 
   // Prisma known request errors
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
+    let statusCode = StatusCodes.INTERNAL_SERVER_ERROR;
+    let message = "Database error.";
+
     if (err.code === "P2002") {
       const field = (err.meta?.target as string[])?.[0] ?? "field";
       statusCode = StatusCodes.CONFLICT;
@@ -52,11 +64,8 @@ export const errorHandler = (
     return;
   }
 
-  // Unknown error — log and respond generically
-  logger.error(
-    { err, url: req.url, method: req.method },
-    "Unhandled server error"
-  );
+  // Unknown — log and respond generically
+  logger.error({ err, url: req.url, method: req.method }, "Unhandled server error");
 
   res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
     success: false,

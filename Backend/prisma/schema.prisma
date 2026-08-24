@@ -1,5 +1,8 @@
 // FlexAcademy — Prisma Schema
 // DB: PostgreSQL | ORM: Prisma v5
+// Updated: Full platform schema including AI-Tutor collaboration pipeline
+//          (StudentTutorAssignment, LearningGap, TutorInsight,
+//           TutorIntervention, ExamReadinessCertification)
 
 generator client {
   provider = "prisma-client-js"
@@ -10,13 +13,15 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 // ENUMS
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
 enum Role {
   STUDENT
   TUTOR
+  PARENT
+  SCHOOL_ADMIN
   ADMIN
   SUPER_ADMIN
 }
@@ -90,6 +95,7 @@ enum PaymentStatus {
 }
 
 enum NotificationType {
+  // Existing
   STUDY_REMINDER
   BADGE_EARNED
   STREAK_MILESTONE
@@ -97,162 +103,586 @@ enum NotificationType {
   NEW_CONTENT
   RESULT_READY
   LEADERBOARD_UPDATE
+  BOOKING_CONFIRMED
+  BOOKING_CANCELLED
+  TUTOR_APPROVED
+  PARENT_ALERT
+  PAYMENT_SUCCESS
+  PAYMENT_FAILED
   SYSTEM
+  ANNOUNCEMENT
+  // AI-Tutor pipeline notifications
+  GAP_DETECTED
+  TUTOR_INSIGHT_READY
+  STUDENT_IMPROVED
+  EXAM_READINESS_UPDATED
+  INTERVENTION_REQUIRED
+  CERTIFICATION_READY
+  // Account standing
+  TUTOR_SUSPENDED
+  TUTOR_REINSTATED
+  COURSE_APPROVED
+  COURSE_REJECTED
 }
 
-// ─────────────────────────────────────────────
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+  PUSH
+  WHATSAPP
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+// Distinguishes one-off bookings from ongoing assignment sessions
+enum SessionType {
+  ONE_OFF
+  ASSIGNMENT_SESSION
+  REMEDIAL
+}
+
+enum TutorApplicationStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+/// Lifecycle of tutor-authored course content, from draft to live.
+/// `isPublished` on Course stays the flag student-facing queries filter on;
+/// this tracks how it got there and who signed it off.
+enum CourseStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
+enum ReportReason {
+  INCORRECT_ANSWER
+  OUTDATED_CONTENT
+  POOR_EXPLANATION
+  DUPLICATE
+  OFFENSIVE
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+enum ExamSimulationStatus {
+  IN_PROGRESS
+  SUBMITTED
+  TIMED_OUT
+  ABANDONED
+}
+
+enum StudyPlanStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ABANDONED
+}
+
+enum FlashcardReviewResult {
+  AGAIN
+  HARD
+  GOOD
+  EASY
+}
+
+enum LicenseType {
+  SCHOOL
+  INSTITUTION
+  CORPORATE
+}
+
+// ── AI-Tutor Pipeline Enums ───────────────────────────────────────────────────
+
+enum AssignmentStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  TERMINATED
+}
+
+enum GapSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum GapStatus {
+  OPEN
+  ACKNOWLEDGED
+  IN_PROGRESS
+  RESOLVED
+  REGRESSED
+}
+
+enum CertificationStatus {
+  PENDING_REVIEW
+  CERTIFIED
+  DEFERRED
+  REVOKED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // USERS & AUTH
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
 model User {
-  id                String           @id @default(uuid())
-  email             String           @unique
-  phone             String?          @unique
-  passwordHash      String?
-  firstName         String
-  lastName          String
-  avatar            String?
-  role              Role             @default(STUDENT)
-  isEmailVerified   Boolean          @default(false)
-  isPhoneVerified   Boolean          @default(false)
-  isActive          Boolean          @default(true)
-  googleId          String?          @unique
-  refreshTokenHash  String?
-  lastLoginAt       DateTime?
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  id               String    @id @default(uuid())
+  email            String    @unique
+  phone            String?   @unique
+  passwordHash     String?
+  firstName        String
+  lastName         String
+  avatar           String?
+  role             Role      @default(STUDENT)
+  isEmailVerified  Boolean   @default(false)
+  isPhoneVerified  Boolean   @default(false)
+  /// Hard deactivation — blocks login entirely. Reserve for closed/banned
+  /// accounts. Routine moderation uses the suspension fields below instead.
+  isActive         Boolean   @default(true)
 
-  // Relations
-  studentProfile    StudentProfile?
-  tutorProfile      TutorProfile?
-  subscription      Subscription?
-  enrollments       Enrollment[]
-  quizAttempts      QuizAttempt[]
-  studySessions     StudySession[]
-  notifications     Notification[]
-  payments          Payment[]
-  badges            UserBadge[]
-  progressRecords   LearningProgress[]
-  leaderboardEntries LeaderboardEntry[]
-  aiSessions        AiTutorSession[]
-  liveClassBookings LiveClassBooking[]
-  parentLinks       ParentStudentLink[] @relation("ParentUser")
-  childLinks        ParentStudentLink[] @relation("ChildUser")
-  auditLogs         AuditLog[]
+  // ── Soft suspension ──────────────────────────────────────────────────────
+  // A suspended user CAN still sign in and see why, and appeal. What they lose
+  // is the ability to act: tutors can't author or earn, and their student
+  // assignments are paused. Suspension is "active" when suspendedAt is set —
+  // deliberately no redundant boolean, which could drift out of sync.
+  suspendedAt      DateTime?
+  suspensionReason String?
+  suspendedBy      String?   // admin User.id
+
+  googleId         String?   @unique
+  refreshTokenHash String?
+  lastLoginAt      DateTime?
+  schoolId         String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  // Existing relations
+  studentProfile       StudentProfile?
+  tutorProfile         TutorProfile?
+  subscription         Subscription?
+  enrollments          Enrollment[]
+  quizAttempts         QuizAttempt[]
+  studySessions        StudySession[]
+  notifications        Notification[]
+  notificationPrefs    NotificationPreference[]
+  deviceTokens         DeviceToken[]
+  payments             Payment[]
+  badges               UserBadge[]
+  progressRecords      LearningProgress[]
+  lessonProgress       LessonProgress[]
+  leaderboardEntries   LeaderboardEntry[]
+  aiSessions           AiTutorSession[]
+  liveClassBookings    LiveClassBooking[]
+  auditLogs            AuditLog[]
+  bookmarks            Bookmark[]
+  certificates         Certificate[]
+  parentLinks          ParentStudentLink[]  @relation("ParentUser")
+  childLinks           ParentStudentLink[]  @relation("ChildUser")
+  parentAlerts         ParentAlert[]        @relation("ParentAlerts")
+  studyPlans           StudyPlan[]
+  flashcardDecks       FlashcardDeck[]
+  flashcardReviews     FlashcardReview[]
+  flashcardProgress    FlashcardProgress[]
+  examSimulations      ExamSimulation[]
+  contentReports       ContentReport[]
+  tutorReviews         TutorReview[]        @relation("ReviewerUser")
+  tutorBookings        Booking[]            @relation("StudentBooking")
+  announcements        Announcement[]
+  referralsMade        Referral[]           @relation("ReferrerUser")
+  referralsReceived    Referral[]           @relation("ReferredUser")
+  promoCodes           PromoCodeUsage[]
+  school               School?              @relation(fields: [schoolId], references: [id])
+
+  // AI-Tutor pipeline relations
+  studentAssignments        StudentTutorAssignment[]       @relation("StudentAssignments")
+  learningGaps              LearningGap[]                  @relation("StudentGaps")
+  tutorInsightsReceived     TutorInsight[]                 @relation("StudentInsights")
+  tutorInterventionsReceived TutorIntervention[]           @relation("StudentInterventions")
+  examCertifications        ExamReadinessCertification[]   @relation("StudentCertifications")
 
   @@index([email])
   @@index([role])
+  @@index([schoolId])
   @@map("users")
 }
 
 model StudentProfile {
-  id              String    @id @default(uuid())
-  userId          String    @unique
-  gradeLevel      String    // e.g. "SS3", "JSS2", "Primary 6"
-  curriculum      String    // e.g. "WAEC", "IGCSE", "Cambridge"
-  school          String?
-  state           String?
-  country         String    @default("Nigeria")
-  studyGoal       String?
-  targetExams     ExamCategory[]
-  targetYear      Int?
-  studyStreakDays  Int       @default(0)
-  totalXp         Int       @default(0)
-  weeklyGoalMins  Int       @default(120)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id             String       @id @default(uuid())
+  userId         String       @unique
+  gradeLevel     String
+  curriculum     String
+  school         String?
+  state          String?
+  country        String       @default("Nigeria")
+  studyGoal      String?
+  targetExams          ExamCategory[]
+  preferredSubjectIds  String[]
+  targetYear           Int?
+  studyStreakDays       Int          @default(0)
+  longestStreak  Int          @default(0)
+  totalXp        Int          @default(0)
+  weeklyGoalMins Int          @default(120)
+  lastStudyDate  DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("student_profiles")
 }
 
 model TutorProfile {
-  id                String    @id @default(uuid())
-  userId            String    @unique
-  bio               String?
-  qualifications    String[]
-  specializations   String[]
-  yearsOfExperience Int       @default(0)
-  hourlyRate        Decimal?  @db.Decimal(10, 2)
-  rating            Decimal   @default(0) @db.Decimal(3, 2)
-  totalReviews      Int       @default(0)
-  isVerified        Boolean   @default(false)
-  availabilitySlots Json?     // JSON schedule
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id                  String                 @id @default(uuid())
+  userId              String                 @unique
+  bio                 String?
+  qualifications      String[]
+  specializations     String[]
+  subjectIds          String[]
+  yearsOfExperience   Int                    @default(0)
+  hourlyRate          Decimal?               @db.Decimal(10, 2)
+  currency            String                 @default("NGN")
+  rating              Decimal                @default(0) @db.Decimal(3, 2)
+  totalReviews        Int                    @default(0)
+  totalSessions       Int                    @default(0)
+  maxStudents         Int                    @default(10) // max concurrent assigned students
+  isVerified          Boolean                @default(false)
+  applicationStatus   TutorApplicationStatus @default(PENDING)
+  availabilitySlots   Json?                  // [{dayOfWeek, startTime, endTime}]
+  bankDetails         Json?                  // encrypted bank/payout info
+  totalEarnings       Decimal                @default(0) @db.Decimal(12, 2)
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
 
-  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  liveClasses       LiveClass[]
+  user                User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  liveClasses         LiveClass[]
+  bookings            Booking[]
+  reviews             TutorReview[]
+  application         TutorApplication?
+  earnings            TutorEarning[]
+
+  // AI-Tutor pipeline relations
+  assignments         StudentTutorAssignment[]
+  insights            TutorInsight[]
+  interventions       TutorIntervention[]
+  courses             Course[]               // content this tutor authored
+  flashcardDecks      FlashcardDeck[]        // revision decks attached to lessons
 
   @@map("tutor_profiles")
 }
 
-model ParentStudentLink {
-  id        String   @id @default(uuid())
-  parentId  String
-  studentId String
-  createdAt DateTime @default(now())
+model TutorApplication {
+  id              String                 @id @default(uuid())
+  tutorProfileId  String                 @unique
+  status          TutorApplicationStatus @default(PENDING)
+  cvUrl           String?
+  idDocumentUrl   String?
+  coverLetter     String?
+  reviewNote      String?
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  submittedAt     DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
 
-  parent    User     @relation("ParentUser", fields: [parentId], references: [id])
-  child     User     @relation("ChildUser", fields: [studentId], references: [id])
+  tutorProfile    TutorProfile           @relation(fields: [tutorProfileId], references: [id], onDelete: Cascade)
+
+  @@map("tutor_applications")
+}
+
+model TutorEarning {
+  id             String       @id @default(uuid())
+  tutorProfileId String
+  bookingId      String       @unique
+  grossAmount    Decimal      @db.Decimal(10, 2)
+  platformFee    Decimal      @db.Decimal(10, 2)
+  netAmount      Decimal      @db.Decimal(10, 2)
+  currency       String       @default("NGN")
+  isPaid         Boolean      @default(false)
+  paidAt         DateTime?
+  createdAt      DateTime     @default(now())
+
+  tutorProfile   TutorProfile @relation(fields: [tutorProfileId], references: [id])
+  booking        Booking      @relation(fields: [bookingId], references: [id])
+
+  @@index([tutorProfileId])
+  @@map("tutor_earnings")
+}
+
+model TutorReview {
+  id             String       @id @default(uuid())
+  tutorProfileId String
+  reviewerId     String
+  bookingId      String       @unique
+  rating         Int
+  comment        String?
+  isPublic       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  tutorProfile   TutorProfile @relation(fields: [tutorProfileId], references: [id])
+  reviewer       User         @relation("ReviewerUser", fields: [reviewerId], references: [id])
+  booking        Booking      @relation(fields: [bookingId], references: [id])
+
+  @@index([tutorProfileId])
+  @@map("tutor_reviews")
+}
+
+model ParentStudentLink {
+  id           String    @id @default(uuid())
+  parentId     String
+  studentId    String
+  nickname     String?
+  isVerified   Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+
+  parent       User      @relation("ParentUser", fields: [parentId], references: [id])
+  child        User      @relation("ChildUser", fields: [studentId], references: [id])
+  alerts       ParentAlert[]
 
   @@unique([parentId, studentId])
   @@map("parent_student_links")
 }
 
-// ─────────────────────────────────────────────
+model ParentAlert {
+  id              String            @id @default(uuid())
+  linkId          String
+  parentId        String
+  alertType       String            // "inactivity" | "low_score" | "streak_broken" | "gap_detected"
+  message         String
+  inactivityDays  Int?
+  minScorePercent Int?
+  isRead          Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+
+  link            ParentStudentLink @relation(fields: [linkId], references: [id])
+  parent          User              @relation("ParentAlerts", fields: [parentId], references: [id])
+
+  @@index([parentId])
+  @@map("parent_alerts")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCHOOL / INSTITUTION (B2B)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model School {
+  id            String      @id @default(uuid())
+  name          String
+  slug          String      @unique
+  address       String?
+  state         String?
+  country       String      @default("Nigeria")
+  contactEmail  String?
+  contactPhone  String?
+  logoUrl       String?
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  users         User[]
+  licenses      SchoolLicense[]
+
+  @@map("schools")
+}
+
+model SchoolLicense {
+  id             String           @id @default(uuid())
+  schoolId       String
+  licenseType    LicenseType      @default(SCHOOL)
+  tier           SubscriptionTier @default(PRO)
+  maxStudents    Int              @default(100)
+  activeStudents Int              @default(0)
+  startsAt       DateTime
+  expiresAt      DateTime
+  isActive       Boolean          @default(true)
+  pricePerSeat   Decimal?         @db.Decimal(10, 2)
+  totalPaid      Decimal          @default(0) @db.Decimal(12, 2)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  school         School           @relation(fields: [schoolId], references: [id])
+
+  @@index([schoolId])
+  @@map("school_licenses")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SUBSCRIPTIONS & PAYMENTS
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
 model Subscription {
-  id                String             @id @default(uuid())
-  userId            String             @unique
-  tier              SubscriptionTier   @default(FREE)
-  status            SubscriptionStatus @default(TRIAL)
-  stripeCustomerId  String?
-  stripeSubId       String?
+  id                 String             @id @default(uuid())
+  userId             String             @unique
+  tier               SubscriptionTier   @default(FREE)
+  status             SubscriptionStatus @default(TRIAL)
+  stripeCustomerId   String?
+  stripeSubId        String?
+  paystackCustomerId String?
+  paystackSubCode    String?
+  nombaCustomerId    String?
+  nombaTokenKey      String?  // stored card token for recurring billing
+  // Which rung of the ladder was bought, and the version of pricing.config.json
+  // it was sold under. Rule 4: a price change must never reprice an existing
+  // subscriber, so renewal reads these rather than today's config.
+  planId             String?
+  termMonths         Int?
+  pricingConfigVersion String?
   currentPeriodStart DateTime?
-  currentPeriodEnd  DateTime?
-  cancelAtPeriodEnd Boolean            @default(false)
-  trialEndsAt       DateTime?
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean            @default(false)
+  trialEndsAt        DateTime?
+  promoCodeId        String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
-  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  payments          Payment[]
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payments           Payment[]
+  promoCode          PromoCode?         @relation(fields: [promoCodeId], references: [id])
 
   @@map("subscriptions")
 }
 
 model Payment {
-  id               String        @id @default(uuid())
-  userId           String
-  subscriptionId   String?
-  amount           Decimal       @db.Decimal(10, 2)
-  currency         String        @default("NGN")
-  status           PaymentStatus @default(PENDING)
-  provider         String        // "stripe" | "paystack" | "flutterwave"
-  providerRef      String?       @unique
-  metadata         Json?
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  id             String        @id @default(uuid())
+  userId         String
+  subscriptionId String?
+  bookingId      String?       @unique
+  amount         Decimal       @db.Decimal(10, 2)
+  currency       String        @default("NGN")
+  status         PaymentStatus @default(PENDING)
+  provider       String        // "stripe" | "paystack" | "flutterwave"
+  providerRef    String?       @unique
+  metadata       Json?
+  refundedAt     DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
-  user             User          @relation(fields: [userId], references: [id])
-  subscription     Subscription? @relation(fields: [subscriptionId], references: [id])
+  user           User          @relation(fields: [userId], references: [id])
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
+  booking        Booking?      @relation(fields: [bookingId], references: [id])
 
   @@index([userId])
   @@index([status])
   @@map("payments")
 }
 
-// ─────────────────────────────────────────────
+model PromoCode {
+  id              String           @id @default(uuid())
+  code            String           @unique
+  description     String?
+  discountType    String           // "percent" | "fixed"
+  discountValue   Decimal          @db.Decimal(10, 2)
+  maxUses         Int?
+  currentUses     Int              @default(0)
+  minTier         SubscriptionTier?
+  isActive        Boolean          @default(true)
+  expiresAt       DateTime?
+  createdAt       DateTime         @default(now())
+
+  subscriptions   Subscription[]
+  usages          PromoCodeUsage[]
+
+  @@map("promo_codes")
+}
+
+model PromoCodeUsage {
+  id          String    @id @default(uuid())
+  promoCodeId String
+  userId      String
+  usedAt      DateTime  @default(now())
+
+  promoCode   PromoCode @relation(fields: [promoCodeId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@unique([promoCodeId, userId])
+  @@map("promo_code_usages")
+}
+
+model Referral {
+  id           String    @id @default(uuid())
+  referrerId   String
+  referredId   String    @unique
+  code         String    @unique
+  isConverted  Boolean   @default(false)
+  rewardGiven  Boolean   @default(false)
+  convertedAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  referrer     User      @relation("ReferrerUser", fields: [referrerId], references: [id])
+  referred     User      @relation("ReferredUser", fields: [referredId], references: [id])
+
+  @@index([referrerId])
+  @@map("referrals")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TUTOR BOOKING
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Booking {
+  id             String        @id @default(uuid())
+  studentId      String
+  tutorProfileId String
+  subject        String
+  topic          String?
+  scheduledAt    DateTime
+  durationMins   Int           @default(60)
+  status         BookingStatus @default(PENDING)
+  sessionType    SessionType   @default(ONE_OFF)
+  assignmentId   String?       // links to ongoing StudentTutorAssignment if not one-off
+  meetingUrl     String?
+  studentNotes   String?
+  tutorNotes     String?
+  cancelReason   String?
+  cancelledBy    String?
+  completedAt    DateTime?
+  amount         Decimal       @db.Decimal(10, 2)
+  currency       String        @default("NGN")
+  liveClassId    String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  student        User                    @relation("StudentBooking", fields: [studentId], references: [id])
+  tutorProfile   TutorProfile            @relation(fields: [tutorProfileId], references: [id])
+  assignment     StudentTutorAssignment? @relation(fields: [assignmentId], references: [id])
+  liveClass      LiveClass?              @relation(fields: [liveClassId], references: [id])
+  payment        Payment?
+  review         TutorReview?
+  earning        TutorEarning?
+  intervention   TutorIntervention?      // set when this session is a tutor intervention
+
+  @@index([studentId])
+  @@index([tutorProfileId])
+  @@index([assignmentId])
+  @@index([scheduledAt])
+  @@map("bookings")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CURRICULUM & CONTENT
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
 model Subject {
   id          String    @id @default(uuid())
-  name        String    @unique // "Mathematics", "English", "Physics"
+  name        String    @unique
   slug        String    @unique
   description String?
   icon        String?
@@ -262,6 +692,7 @@ model Subject {
 
   topics      Topic[]
   courses     Course[]
+  assignments StudentTutorAssignment[]
 
   @@map("subjects")
 }
@@ -276,9 +707,14 @@ model Topic {
   isActive    Boolean   @default(true)
   createdAt   DateTime  @default(now())
 
-  subject     Subject   @relation(fields: [subjectId], references: [id])
-  lessons     Lesson[]
-  questions   Question[]
+  subject          Subject          @relation(fields: [subjectId], references: [id])
+  lessons          Lesson[]
+  questions        Question[]
+  flashcardDecks   FlashcardDeck[]
+  studyPlanItems   StudyPlanItem[]
+  topicMasteries   TopicMastery[]
+  learningGaps     LearningGap[]
+  studySessions    StudySession[]
 
   @@unique([subjectId, slug])
   @@index([subjectId])
@@ -286,31 +722,64 @@ model Topic {
 }
 
 model Course {
-  id              String          @id @default(uuid())
-  subjectId       String
-  title           String
-  slug            String          @unique
-  description     String?
-  thumbnail       String?
-  difficulty      DifficultyLevel @default(BEGINNER)
-  gradeLevel      String?
-  curriculum      String?
-  isFree          Boolean         @default(false)
-  requiredTier    SubscriptionTier @default(FREE)
-  totalDuration   Int             @default(0) // minutes
-  isPublished     Boolean         @default(false)
-  publishedAt     DateTime?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  id             String           @id @default(uuid())
+  subjectId      String
+  title          String
+  slug           String           @unique
+  description    String?
+  thumbnail      String?
+  difficulty     DifficultyLevel  @default(BEGINNER)
+  gradeLevel     String?
+  curriculum     String?
+  isFree         Boolean          @default(false)
+  requiredTier   SubscriptionTier @default(FREE)
+  totalDuration  Int              @default(0)
+  isPublished    Boolean          @default(false)
+  publishedAt    DateTime?
+  totalLessons   Int              @default(0)
 
-  subject         Subject         @relation(fields: [subjectId], references: [id])
+  // ── Authorship & review ──────────────────────────────────────────────────
+  // Nullable: courses seeded before tutor authoring existed have no author.
+  // Revenue share is attributed through this field.
+  tutorProfileId String?
+  status         CourseStatus     @default(DRAFT)
+  submittedAt    DateTime?
+  reviewedBy     String?          // admin User.id
+  reviewedAt     DateTime?
+  reviewNote     String?          // required by the API when rejecting
+
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  subject         Subject           @relation(fields: [subjectId], references: [id])
+  tutorProfile    TutorProfile?     @relation(fields: [tutorProfileId], references: [id])
   lessons         Lesson[]
   enrollments     Enrollment[]
   progressRecords LearningProgress[]
+  certificates    Certificate[]
+  reviews         CourseReview[]
 
   @@index([subjectId])
   @@index([isPublished])
+  @@index([tutorProfileId])       // "my courses" on the tutor dashboard
+  @@index([status])               // admin review queue
   @@map("courses")
+}
+
+model CourseReview {
+  id        String   @id @default(uuid())
+  courseId  String
+  userId    String
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  course    Course   @relation(fields: [courseId], references: [id])
+
+  @@unique([courseId, userId])
+  @@index([courseId])
+  @@map("course_reviews")
 }
 
 model Lesson {
@@ -320,78 +789,122 @@ model Lesson {
   title        String
   slug         String
   contentType  ContentType
-  content      String?     // markdown text or URL
+  content      String?
   videoUrl     String?
-  duration     Int?        // minutes
+  /// Cloudinary public_id for videoUrl. Stored rather than parsed back out of
+  /// the URL, which is unreliable once transformations/versions are applied.
+  /// Needed to verify, replace and delete the asset.
+  videoPublicId String?
+  duration     Int?
   order        Int         @default(0)
   isFree       Boolean     @default(false)
   isPublished  Boolean     @default(false)
-  aiSummary    String?     // AI-generated lesson summary
+  aiSummary    String?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
-  course       Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  topic        Topic?      @relation(fields: [topicId], references: [id])
-  studySessions StudySession[]
+  course         Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  topic          Topic?           @relation(fields: [topicId], references: [id])
+  studySessions  StudySession[]
+  lessonProgress LessonProgress[]
+  bookmarks      Bookmark[]
+  flashcardDecks FlashcardDeck[]
 
   @@unique([courseId, slug])
   @@index([courseId])
   @@map("lessons")
 }
 
-// ─────────────────────────────────────────────
+model LessonProgress {
+  id          String    @id @default(uuid())
+  userId      String
+  lessonId    String
+  isCompleted Boolean   @default(false)
+  watchedSecs Int       @default(0)
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id])
+  lesson      Lesson    @relation(fields: [lessonId], references: [id])
+
+  @@unique([userId, lessonId])
+  @@index([userId])
+  @@map("lesson_progress")
+}
+
+model Bookmark {
+  id        String   @id @default(uuid())
+  userId    String
+  lessonId  String
+  note      String?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+  lesson    Lesson   @relation(fields: [lessonId], references: [id])
+
+  @@unique([userId, lessonId])
+  @@map("bookmarks")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // EXAM QUESTIONS & QUIZZES
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
 model Question {
-  id              String        @id @default(uuid())
-  topicId         String?
-  subjectId       String?
-  examCategory    ExamCategory?
-  year            Int?          // Exam year (for past questions)
-  questionType    QuestionType  @default(MULTIPLE_CHOICE)
-  body            String        // The question text (supports Markdown + LaTeX)
-  imageUrl        String?
-  options         Json?         // [{id, text, isCorrect}]
-  correctAnswer   String?
-  explanation     String?       // Detailed solution explanation
-  difficulty      DifficultyLevel @default(INTERMEDIATE)
-  marks           Int           @default(1)
-  aiGenerated     Boolean       @default(false)
-  tags            String[]
-  isVerified      Boolean       @default(false)
-  isActive        Boolean       @default(true)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  id             String          @id @default(uuid())
+  topicId        String?
+  subjectId      String?
+  examCategory   ExamCategory?
+  year           Int?
+  questionType   QuestionType    @default(MULTIPLE_CHOICE)
+  body           String
+  imageUrl       String?
+  options        Json?           // [{id, text, isCorrect}]
+  correctAnswer  String?
+  explanation    String?
+  difficulty     DifficultyLevel @default(INTERMEDIATE)
+  marks          Int             @default(1)
+  aiGenerated    Boolean         @default(false)
+  tags           String[]
+  isVerified     Boolean         @default(false)
+  isActive       Boolean         @default(true)
+  usageCount     Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
-  topic           Topic?        @relation(fields: [topicId], references: [id])
-  quizQuestions   QuizQuestion[]
-  attemptAnswers  AttemptAnswer[]
+  topic          Topic?                 @relation(fields: [topicId], references: [id])
+  quizQuestions  QuizQuestion[]
+  attemptAnswers AttemptAnswer[]
+  examAnswers    ExamSimulationAnswer[]
+  reports        ContentReport[]
+  flashcards     Flashcard[]
 
   @@index([examCategory, year])
   @@index([topicId])
+  @@index([subjectId])
   @@map("questions")
 }
 
 model Quiz {
-  id              String          @id @default(uuid())
-  title           String
-  description     String?
-  examCategory    ExamCategory?
-  subjectId       String?
-  gradeLevel      String?
-  difficulty      DifficultyLevel @default(INTERMEDIATE)
-  timeLimit       Int?            // minutes
-  passMark        Int             @default(50) // percentage
-  shuffleQuestions Boolean        @default(true)
-  shuffleOptions  Boolean         @default(true)
-  isPublished     Boolean         @default(false)
-  requiredTier    SubscriptionTier @default(FREE)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  id               String           @id @default(uuid())
+  title            String
+  description      String?
+  examCategory     ExamCategory?
+  subjectId        String?
+  gradeLevel       String?
+  difficulty       DifficultyLevel  @default(INTERMEDIATE)
+  timeLimit        Int?
+  passMark         Int              @default(50)
+  shuffleQuestions Boolean          @default(true)
+  shuffleOptions   Boolean          @default(true)
+  isPublished      Boolean          @default(false)
+  requiredTier     SubscriptionTier @default(FREE)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
-  questions       QuizQuestion[]
-  attempts        QuizAttempt[]
+  questions        QuizQuestion[]
+  attempts         QuizAttempt[]
 
   @@map("quizzes")
 }
@@ -410,22 +923,22 @@ model QuizQuestion {
 }
 
 model QuizAttempt {
-  id           String    @id @default(uuid())
-  userId       String
-  quizId       String
-  score        Int       @default(0)
-  totalMarks   Int       @default(0)
-  percentage   Decimal   @db.Decimal(5, 2) @default(0)
-  timeTaken    Int?      // seconds
-  isPassed     Boolean   @default(false)
-  completedAt  DateTime?
-  aiAnalysis   String?   // AI-generated performance feedback
-  startedAt    DateTime  @default(now())
-  createdAt    DateTime  @default(now())
+  id          String    @id @default(uuid())
+  userId      String
+  quizId      String
+  score       Int       @default(0)
+  totalMarks  Int       @default(0)
+  percentage  Decimal   @db.Decimal(5, 2) @default(0)
+  timeTaken   Int?
+  isPassed    Boolean   @default(false)
+  completedAt DateTime?
+  aiAnalysis  String?
+  startedAt   DateTime  @default(now())
+  createdAt   DateTime  @default(now())
 
-  user         User      @relation(fields: [userId], references: [id])
-  quiz         Quiz      @relation(fields: [quizId], references: [id])
-  answers      AttemptAnswer[]
+  user        User            @relation(fields: [userId], references: [id])
+  quiz        Quiz            @relation(fields: [quizId], references: [id])
+  answers     AttemptAnswer[]
 
   @@index([userId])
   @@index([quizId])
@@ -440,7 +953,7 @@ model AttemptAnswer {
   writtenAnswer  String?
   isCorrect      Boolean     @default(false)
   marksAwarded   Int         @default(0)
-  timeTaken      Int?        // seconds per question
+  timeTaken      Int?
   createdAt      DateTime    @default(now())
 
   attempt        QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
@@ -450,20 +963,221 @@ model AttemptAnswer {
   @@map("attempt_answers")
 }
 
-// ─────────────────────────────────────────────
-// LEARNING PROGRESS & GAMIFICATION
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// EXAM SIMULATION
+// ─────────────────────────────────────────────────────────────────────────────
 
-model Enrollment {
+model ExamSimulation {
+  id               String               @id @default(uuid())
+  userId           String
+  examCategory     ExamCategory
+  subjectId        String?
+  year             Int?
+  title            String
+  totalQuestions   Int
+  timeLimitMins    Int
+  status           ExamSimulationStatus @default(IN_PROGRESS)
+  startedAt        DateTime             @default(now())
+  submittedAt      DateTime?
+  autoSubmittedAt  DateTime?
+  score            Int?
+  totalMarks       Int?
+  percentage       Decimal?             @db.Decimal(5, 2)
+  isPassed         Boolean?
+  aiAnalysis       String?
+  questionSnapshot Json
+  createdAt        DateTime             @default(now())
+
+  user             User                   @relation(fields: [userId], references: [id])
+  answers          ExamSimulationAnswer[]
+
+  @@index([userId])
+  @@index([examCategory])
+  @@map("exam_simulations")
+}
+
+model ExamSimulationAnswer {
+  id             String         @id @default(uuid())
+  simulationId   String
+  questionId     String
+  selectedOption String?
+  isCorrect      Boolean        @default(false)
+  marksAwarded   Int            @default(0)
+  timeTaken      Int?
+
+  simulation     ExamSimulation @relation(fields: [simulationId], references: [id], onDelete: Cascade)
+  question       Question       @relation(fields: [questionId], references: [id])
+
+  @@unique([simulationId, questionId])
+  @@map("exam_simulation_answers")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STUDY PLANS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model StudyPlan {
+  id                String          @id @default(uuid())
+  userId            String
+  assignmentId      String?         // links plan to active StudentTutorAssignment
+  title             String
+  description       String?
+  targetExam        ExamCategory?
+  targetDate        DateTime?
+  dailyGoalMins     Int             @default(60)
+  status            StudyPlanStatus @default(ACTIVE)
+  isAiGenerated     Boolean         @default(false)
+  isSharedWithTutor Boolean         @default(false)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  user              User                     @relation(fields: [userId], references: [id])
+  assignment        StudentTutorAssignment?  @relation(fields: [assignmentId], references: [id])
+  items             StudyPlanItem[]
+
+  @@index([userId])
+  @@index([assignmentId])
+  @@map("study_plans")
+}
+
+model StudyPlanItem {
   id           String    @id @default(uuid())
-  userId       String
-  courseId     String
-  enrolledAt   DateTime  @default(now())
-  completedAt  DateTime?
+  studyPlanId  String
+  topicId      String?
+  title        String
+  description  String?
+  scheduledFor DateTime
+  durationMins Int       @default(30)
   isCompleted  Boolean   @default(false)
+  completedAt  DateTime?
+  order        Int       @default(0)
+  createdAt    DateTime  @default(now())
+
+  studyPlan    StudyPlan @relation(fields: [studyPlanId], references: [id], onDelete: Cascade)
+  topic        Topic?    @relation(fields: [topicId], references: [id])
+
+  @@index([studyPlanId])
+  @@map("study_plan_items")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FLASHCARDS (Spaced Repetition — SM-2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A deck is either personal (userId set) or course content (lessonId set).
+/// Course decks are authored by a tutor alongside a lesson and revised by every
+/// student taking it, which is why scheduling cannot live on the card — see
+/// FlashcardProgress.
+model FlashcardDeck {
+  id          String      @id @default(uuid())
+  /// Owner of a personal deck. Null for tutor-authored course decks.
+  userId      String?
+  /// Set when the deck is course content. It inherits the lesson's published
+  /// state rather than needing its own approval queue.
+  lessonId       String?
+  tutorProfileId String?
+  topicId     String?
+  title       String
+  description String?
+  isPublic    Boolean     @default(false)
+  cardCount   Int         @default(0)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  user        User?          @relation(fields: [userId], references: [id])
+  lesson      Lesson?        @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  tutorProfile TutorProfile? @relation(fields: [tutorProfileId], references: [id])
+  topic       Topic?         @relation(fields: [topicId], references: [id])
+  cards       Flashcard[]
+
+  @@index([userId])
+  @@index([lessonId])
+  @@map("flashcard_decks")
+}
+
+/// Pure content. Scheduling state deliberately does NOT live here: one deck is
+/// revised by many students, so an easeFactor on the card would mean the first
+/// student to review it rewrote everyone else's schedule.
+model Flashcard {
+  id             String    @id @default(uuid())
+  deckId         String
+  questionId     String?
+  front          String
+  back           String
+  imageUrl       String?
+  tags           String[]
+  /// True for Claude-drafted cards. Unverified cards are never served to
+  /// students — a wrong "correct" answer teaches the mistake.
+  aiGenerated    Boolean   @default(false)
+  isVerified     Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  deck           FlashcardDeck       @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  question       Question?           @relation(fields: [questionId], references: [id])
+  reviews        FlashcardReview[]
+  progress       FlashcardProgress[]
+
+  @@index([deckId])
+  @@map("flashcards")
+}
+
+/// One student's schedule for one card. This is what makes a deck shareable:
+/// 500 students revising the same card each carry their own ease factor and
+/// due date. Absence of a row means the student has never seen the card, which
+/// is how "new" cards enter the queue.
+model FlashcardProgress {
+  id             String    @id @default(uuid())
+  userId         String
+  flashcardId    String
+  easeFactor     Float     @default(2.5)
+  repetitions    Int       @default(0)
+  interval       Int       @default(0)
+  nextReviewAt   DateTime  @default(now())
+  lastReviewedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  flashcard      Flashcard @relation(fields: [flashcardId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, flashcardId])
+  @@index([userId, nextReviewAt])
+  @@map("flashcard_progress")
+}
+
+model FlashcardReview {
+  id           String                @id @default(uuid())
+  userId       String
+  flashcardId  String
+  result       FlashcardReviewResult
+  easeFactor   Float                 @default(2.5)
+  interval     Int                   @default(1)
+  repetitions  Int                   @default(0)
+  nextReviewAt DateTime
+  reviewedAt   DateTime              @default(now())
 
   user         User      @relation(fields: [userId], references: [id])
-  course       Course    @relation(fields: [courseId], references: [id])
+  flashcard    Flashcard @relation(fields: [flashcardId], references: [id])
+
+  @@index([userId, nextReviewAt])
+  @@map("flashcard_reviews")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LEARNING PROGRESS & GAMIFICATION
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Enrollment {
+  id          String    @id @default(uuid())
+  userId      String
+  courseId    String
+  enrolledAt  DateTime  @default(now())
+  completedAt DateTime?
+  isCompleted Boolean   @default(false)
+
+  user        User      @relation(fields: [userId], references: [id])
+  course      Course    @relation(fields: [courseId], references: [id])
 
   @@unique([userId, courseId])
   @@map("enrollments")
@@ -473,7 +1187,6 @@ model LearningProgress {
   id              String    @id @default(uuid())
   userId          String
   courseId        String
-  completedLessons String[] // lesson IDs
   progressPercent Decimal   @db.Decimal(5, 2) @default(0)
   lastAccessedAt  DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -485,19 +1198,44 @@ model LearningProgress {
   @@map("learning_progress")
 }
 
-model StudySession {
-  id         String   @id @default(uuid())
-  userId     String
-  lessonId   String?
-  subject    String?
-  durationMins Int    @default(0)
-  xpEarned   Int      @default(0)
-  createdAt  DateTime @default(now())
+// Topic-level mastery — primary data source for AI gap detection
+model TopicMastery {
+  id              String    @id @default(uuid())
+  userId          String
+  topicId         String
+  subjectId       String?
+  totalAttempts   Int       @default(0)
+  correctAnswers  Int       @default(0)
+  accuracyPercent Decimal   @db.Decimal(5, 2) @default(0)
+  masteryLevel    Int       @default(0) // 0–100
+  lastAttemptAt   DateTime?
+  updatedAt       DateTime  @updatedAt
 
-  user       User     @relation(fields: [userId], references: [id])
-  lesson     Lesson?  @relation(fields: [lessonId], references: [id])
+  topic           Topic     @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, topicId])
+  @@index([userId])
+  @@map("topic_mastery")
+}
+
+model StudySession {
+  id           String   @id @default(uuid())
+  userId       String
+  lessonId     String?
+  topicId      String?  // which topic was studied — used for XP attribution
+  subject      String?
+  type         String?  // "STUDY_PLAN" | "LESSON" | "AD_HOC"
+  durationMins Int      @default(0)
+  xpEarned     Int      @default(0)
+  date         DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id])
+  lesson       Lesson?  @relation(fields: [lessonId], references: [id])
+  topic        Topic?   @relation(fields: [topicId], references: [id])
 
   @@index([userId])
+  @@index([userId, date])
   @@map("study_sessions")
 }
 
@@ -506,7 +1244,7 @@ model Badge {
   name        String      @unique
   description String
   icon        String
-  criteria    Json        // {type: "streak", value: 7}
+  criteria    Json
   xpReward    Int         @default(0)
   createdAt   DateTime    @default(now())
 
@@ -528,11 +1266,30 @@ model UserBadge {
   @@map("user_badges")
 }
 
+model Certificate {
+  id           String    @id @default(uuid())
+  userId       String
+  courseId     String
+  title        String
+  issuedAt     DateTime  @default(now())
+  expiresAt    DateTime?
+  credentialId String    @unique @default(uuid())
+  pdfUrl       String?
+
+  user         User      @relation(fields: [userId], references: [id])
+  course       Course    @relation(fields: [courseId], references: [id])
+
+  @@unique([userId, courseId])
+  @@index([userId])
+  @@map("certificates")
+}
+
 model LeaderboardEntry {
   id        String   @id @default(uuid())
   userId    String
-  period    String   // "daily", "weekly", "monthly", "all-time"
+  period    String   // "daily" | "weekly" | "monthly" | "all-time"
   subject   String?
+  schoolId  String?
   score     Int      @default(0)
   rank      Int?
   updatedAt DateTime @updatedAt
@@ -544,71 +1301,75 @@ model LeaderboardEntry {
   @@map("leaderboard_entries")
 }
 
-// ─────────────────────────────────────────────
-// AI TUTOR
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// AI TUTOR (FlexBot)
+// ─────────────────────────────────────────────────────────────────────────────
 
 model AiTutorSession {
-  id          String   @id @default(uuid())
-  userId      String
-  subject     String?
-  topic       String?
-  messages    Json     // [{role, content, timestamp}]
-  tokensUsed  Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               String   @id @default(uuid())
+  userId           String
+  subject          String?
+  topic            String?
+  messages         Json     // [{role, content, timestamp}]
+  tokensUsed       Int      @default(0)
+  gapsDetected     Json?    // [{topicId, topicName, confidence}] identified from conversation
+  insightTriggered Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  user        User     @relation(fields: [userId], references: [id])
+  user             User     @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@map("ai_tutor_sessions")
 }
 
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 // LIVE CLASSES
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
 model LiveClass {
-  id              String        @id @default(uuid())
-  tutorProfileId  String
-  title           String
-  description     String?
-  subject         String
-  gradeLevel      String?
-  scheduledAt     DateTime
-  durationMins    Int           @default(60)
-  maxStudents     Int           @default(50)
-  status          SessionStatus @default(SCHEDULED)
-  meetingUrl      String?
-  recordingUrl    String?
-  requiredTier    SubscriptionTier @default(PRO)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  id             String           @id @default(uuid())
+  tutorProfileId String
+  title          String
+  description    String?
+  subject        String
+  gradeLevel     String?
+  scheduledAt    DateTime
+  durationMins   Int              @default(60)
+  maxStudents    Int              @default(50)
+  status         SessionStatus    @default(SCHEDULED)
+  meetingUrl     String?
+  recordingUrl   String?
+  aiNotes        String?
+  requiredTier   SubscriptionTier @default(PRO)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
-  tutor           TutorProfile  @relation(fields: [tutorProfileId], references: [id])
+  tutor           TutorProfile       @relation(fields: [tutorProfileId], references: [id])
   bookings        LiveClassBooking[]
+  sessionBookings Booking[]
 
   @@index([scheduledAt])
   @@map("live_classes")
 }
 
 model LiveClassBooking {
-  id           String    @id @default(uuid())
-  userId       String
-  liveClassId  String
-  bookedAt     DateTime  @default(now())
-  attended     Boolean   @default(false)
+  id          String    @id @default(uuid())
+  userId      String
+  liveClassId String
+  bookedAt    DateTime  @default(now())
+  attended    Boolean   @default(false)
 
-  user         User      @relation(fields: [userId], references: [id])
-  liveClass    LiveClass @relation(fields: [liveClassId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
+  liveClass   LiveClass @relation(fields: [liveClassId], references: [id])
 
   @@unique([userId, liveClassId])
   @@map("live_class_bookings")
 }
 
-// ─────────────────────────────────────────────
-// NOTIFICATIONS & AUDIT
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTIFICATIONS
+// ─────────────────────────────────────────────────────────────────────────────
 
 model Notification {
   id        String           @id @default(uuid())
@@ -626,21 +1387,237 @@ model Notification {
   @@map("notifications")
 }
 
-model AuditLog {
-  id         String   @id @default(uuid())
-  userId     String?
-  action     String
-  entity     String
-  entityId   String?
-  oldValue   Json?
-  newValue   Json?
-  ipAddress  String?
-  userAgent  String?
-  createdAt  DateTime @default(now())
+model NotificationPreference {
+  id        String              @id @default(uuid())
+  userId    String
+  type      NotificationType
+  channel   NotificationChannel
+  isEnabled Boolean             @default(true)
+  updatedAt DateTime            @updatedAt
 
-  user       User?    @relation(fields: [userId], references: [id])
+  user      User                @relation(fields: [userId], references: [id])
+
+  @@unique([userId, type, channel])
+  @@index([userId])
+  @@map("notification_preferences")
+}
+
+model DeviceToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  platform  String   // "web" | "android" | "ios"
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("device_tokens")
+}
+
+model Announcement {
+  id          String    @id @default(uuid())
+  authorId    String
+  title       String
+  body        String
+  targetRole  Role?
+  isPublished Boolean   @default(false)
+  publishedAt DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  author      User      @relation(fields: [authorId], references: [id])
+
+  @@map("announcements")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTENT REPORTING & MODERATION
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ContentReport {
+  id             String       @id @default(uuid())
+  reporterId     String
+  questionId     String?
+  entityType     String       // "question" | "lesson" | "course"
+  entityId       String
+  reason         ReportReason
+  description    String?
+  status         ReportStatus @default(OPEN)
+  resolvedBy     String?
+  resolvedAt     DateTime?
+  resolutionNote String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  reporter       User         @relation(fields: [reporterId], references: [id])
+  question       Question?    @relation(fields: [questionId], references: [id])
+
+  @@index([status])
+  @@index([entityType, entityId])
+  @@map("content_reports")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIT
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  oldValue  Json?
+  newValue  Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user      User?    @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([entity, entityId])
   @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI-TUTOR COLLABORATION PIPELINE
+// The models below form the core of the hybrid AI + human tutor system.
+// Flow: AI detects gap → creates LearningGap → generates TutorInsight →
+//       tutor logs TutorIntervention → AI re-evaluates → loop until
+//       ExamReadinessCertification is issued.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Persistent ongoing student-tutor relationship (not a one-off booking)
+model StudentTutorAssignment {
+  id             String           @id @default(uuid())
+  studentId      String
+  tutorProfileId String
+  subjectId      String
+  status         AssignmentStatus @default(ACTIVE)
+  startedAt      DateTime         @default(now())
+  endedAt        DateTime?
+  notes          String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  student        User             @relation("StudentAssignments", fields: [studentId], references: [id])
+  tutorProfile   TutorProfile     @relation(fields: [tutorProfileId], references: [id])
+  subject        Subject          @relation(fields: [subjectId], references: [id])
+  gaps           LearningGap[]
+  studyPlans     StudyPlan[]
+  bookings       Booking[]
+  certifications ExamReadinessCertification[]
+
+  @@index([studentId])
+  @@index([tutorProfileId])
+  @@index([status])
+  @@map("student_tutor_assignments")
+}
+
+// Formal record of an AI-detected knowledge gap with full lifecycle tracking
+model LearningGap {
+  id                 String                  @id @default(uuid())
+  studentId          String
+  assignmentId       String?
+  topicId            String
+  subjectId          String
+  severity           GapSeverity             @default(MEDIUM)
+  status             GapStatus               @default(OPEN)
+  masteryAtDetection Decimal                 @db.Decimal(5, 2)
+  evidence           Json                    // {quizScores, examScores, attempts, patterns}
+  detectedAt         DateTime                @default(now())
+  resolvedAt         DateTime?
+  resolvedMastery    Decimal?                @db.Decimal(5, 2)
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  student            User                    @relation("StudentGaps", fields: [studentId], references: [id])
+  assignment         StudentTutorAssignment? @relation(fields: [assignmentId], references: [id])
+  topic              Topic                   @relation(fields: [topicId], references: [id])
+  insights           TutorInsight[]
+
+  @@index([studentId, status])
+  @@index([assignmentId])
+  @@map("learning_gaps")
+}
+
+// AI-generated brief delivered to the assigned tutor when a gap is detected
+model TutorInsight {
+  id                  String       @id @default(uuid())
+  gapId               String
+  tutorProfileId      String
+  studentId           String
+  aiSummary           String       // human-readable AI brief
+  recommendedApproach String?
+  focusAreas          Json?        // [{topic, suggestion, priority}]
+  isRead              Boolean      @default(false)
+  readAt              DateTime?
+  isActedOn           Boolean      @default(false)
+  actedOnAt           DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  gap                 LearningGap  @relation(fields: [gapId], references: [id])
+  tutorProfile        TutorProfile @relation(fields: [tutorProfileId], references: [id])
+  student             User         @relation("StudentInsights", fields: [studentId], references: [id])
+  interventions       TutorIntervention[]
+
+  @@index([tutorProfileId, isRead])
+  @@index([studentId])
+  @@map("tutor_insights")
+}
+
+// Records what the tutor did after receiving an AI insight — closes the feedback loop
+model TutorIntervention {
+  id             String       @id @default(uuid())
+  insightId      String
+  tutorProfileId String
+  studentId      String
+  bookingId      String?      @unique // linked session if intervention was a booked session
+  action         String       // description of what the tutor did
+  notes          String?
+  completedAt    DateTime     @default(now())
+  aiReEvaluated  Boolean      @default(false) // has AI re-checked mastery post-intervention?
+  postMastery    Decimal?     @db.Decimal(5, 2)
+  createdAt      DateTime     @default(now())
+
+  insight        TutorInsight @relation(fields: [insightId], references: [id])
+  tutorProfile   TutorProfile @relation(fields: [tutorProfileId], references: [id])
+  student        User         @relation("StudentInterventions", fields: [studentId], references: [id])
+  booking        Booking?     @relation(fields: [bookingId], references: [id])
+
+  @@index([insightId])
+  @@index([studentId])
+  @@map("tutor_interventions")
+}
+
+// Performance gate — AI scores readiness, tutor co-signs to certify student exam-ready
+model ExamReadinessCertification {
+  id               String              @id @default(uuid())
+  studentId        String
+  assignmentId     String?
+  examCategory     ExamCategory
+  aiReadinessScore Decimal             @db.Decimal(5, 2)
+  subjectBreakdown Json                // {subjectId: score, ...}
+  openGapsCount    Int                 @default(0)
+  status           CertificationStatus @default(PENDING_REVIEW)
+  tutorReviewedBy  String?             // tutorProfileId of co-signer
+  tutorCoSignedAt  DateTime?
+  tutorNotes       String?
+  certifiedAt      DateTime?
+  deferredReason   String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  student          User                     @relation("StudentCertifications", fields: [studentId], references: [id])
+  assignment       StudentTutorAssignment?  @relation(fields: [assignmentId], references: [id])
+
+  @@index([studentId, status])
+  @@index([examCategory])
+  @@map("exam_readiness_certifications")
 }

@@ -30,6 +30,6 @@ export const verifyRefreshToken = (token: string): RefreshTokenPayload => {
       process.env.JWT_REFRESH_SECRET as string
     ) as RefreshTokenPayload;
   } catch {
-    throw new ApiError(StatusCodes.UNAUTHORIZED, "Invalid or expired refresh token.");
+    throw ApiError(StatusCodes.UNAUTHORIZED, "Invalid or expired refresh token.");
   }
 };

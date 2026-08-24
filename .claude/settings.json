@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(echo \"--- exit: $? ---\")",
+      "Bash(awk '/^model LearningGap /,/^}/' prisma/schema.prisma)",
+      "Bash(cd \"c:/Users/dell/Desktop/MyProjects/Flexacademy/Frontend/Frontend\" *)",
+      "Read(//tmp/**)",
+      "Bash(cat /tmp/fe.txt)",
+      "Bash(awk -F= '/^ANTHROPIC_API_KEY=/{ *)",
+      "Bash(npx tsx *)",
+      "Bash(curl -s -o /dev/null -w \" health: HTTP %{http_code}\\\\n\" http://localhost:5000/health)",
+      "Bash(curl -s -o /dev/null -w \" api root: HTTP %{http_code}\\\\n\" http://localhost:5000/api/v1)",
+      "Bash(netstat -ano)",
+      "Bash(awk '/export const chat/,/const stream/' controllers/aiTutor.controller.ts)",
+      "Bash(awk '/registerSchema/,/\\\\}\\\\\\)/' validators/index.ts)",
+      "Bash(cd /tmp)",
+      "Bash(curl -s -X POST __TRACKED_VAR__/auth/register -H 'Content-Type: application/json' -d '{\"email\":\"claude-smoketest@flexacademy.test\",\"password\":\"SmokeTest123\",\"firstName\":\"Smoke\",\"lastName\":\"Test\",\"role\":\"STUDENT\"}' -o reg.json -w 'register: HTTP %{http_code}\\\\n')",
+      "Bash(node -e ' *)",
+      "Bash(node dbg4.mjs)",
+      "Bash(rm -f dbg4.mjs)",
+      "Read(//c/Users/dell/.claude/projects/c--Users-dell-Desktop-MyProjects-Flexacademy/memory/**)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\dell\\.claude\\projects\\c--Users-dell-Desktop-MyProjects-Flexacademy\\memory"
+    ]
+  }
+}

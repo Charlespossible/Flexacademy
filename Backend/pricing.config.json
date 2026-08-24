@@ -1,0 +1,102 @@
+{
+  "version": "2026.08.01",
+  "currency": "NGN",
+  "_comment": "Canonical source of truth for every price on the platform (PRICING_SPEC.md §0). Money is integer kobo everywhere — Rule 1. Changing a price is a config deploy, not a code change — Rule 2. Bump `version` on every edit: subscriptions store the version they were sold under so existing subscribers are never repriced retroactively — Rule 4.",
+
+  "anchor_monthly_kobo": 500000,
+
+  "plans": [
+    {
+      "id": "monthly",
+      "name": "Monthly",
+      "term_months": 1,
+      "price_kobo": 500000,
+      "charges": 1,
+      "discount_percent": 0,
+      "is_default": false,
+      "included_live_1to1_sessions_per_term": 0,
+      "blurb": "Full access, month to month. Cancel any time."
+    },
+    {
+      "id": "exam_sprint",
+      "name": "Exam Sprint",
+      "term_months": 3,
+      "price_kobo": 1350000,
+      "charges": 1,
+      "discount_percent": 10,
+      "is_default": false,
+      "included_live_1to1_sessions_per_term": 0,
+      "sell_window_months": { "from": 1, "to": 4 },
+      "displaces_while_selling": "biannual",
+      "blurb": "Three months of intensive preparation, timed to exam season."
+    },
+    {
+      "id": "biannual",
+      "name": "6 Months",
+      "term_months": 6,
+      "price_kobo": 2500000,
+      "charges": 1,
+      "discount_percent": 17,
+      "is_default": false,
+      "included_live_1to1_sessions_per_term": 1,
+      "blurb": "A full term and a half. Includes a live 1:1 session."
+    },
+    {
+      "id": "annual",
+      "name": "Annual",
+      "term_months": 12,
+      "price_kobo": 4500000,
+      "charges": 1,
+      "discount_percent": 25,
+      "is_default": true,
+      "included_live_1to1_sessions_per_term": 2,
+      "blurb": "The whole academic year, at the lowest monthly rate we offer."
+    },
+    {
+      "id": "annual_installments",
+      "name": "Annual, in 3 payments",
+      "term_months": 12,
+      "price_kobo": 4800000,
+      "charges": 3,
+      "discount_percent": 20,
+      "is_default": false,
+      "included_live_1to1_sessions_per_term": 2,
+      "blurb": "The annual plan, spread across three payments."
+    }
+  ],
+
+  "trial": {
+    "_comment": "PRICING_SPEC.md §9. A PAID trial, deliberately: where payment friction is the real drop-off, charging ₦1,000 proves the card works and produces a live mandate before the real charge. Not a rung on the ladder — it is an entry point, so it lives outside `plans` and is excluded from the ladder invariants.",
+    "enabled": true,
+    "name": "7-day trial",
+    "price_kobo": 100000,
+    "duration_days": 7,
+    "credit_kobo": 100000,
+    "credited_to_first_plan": true,
+    "one_per_household": true,
+    "blurb": "Seven days of everything. The ₦1,000 comes off your first plan in full."
+  },
+
+  "tax": {
+    "rate": 0.075,
+    "prices_are_inclusive": true
+  },
+
+  "payment_processing": {
+    "verify_before_launch": true,
+    "_comment": "Paystack-shaped mechanics. Confirm the live rate card before launch (§18 item 1).",
+    "local_card": {
+      "percentage": 0.015,
+      "flat_fee_kobo": 10000,
+      "flat_fee_waived_below_kobo": 250000,
+      "cap_kobo": 200000
+    }
+  },
+
+  "display_rules": {
+    "max_plans_visible": 3,
+    "default_to_annual": true,
+    "savings_in_naira_not_percent": true,
+    "round_numbers_only": true
+  }
+}

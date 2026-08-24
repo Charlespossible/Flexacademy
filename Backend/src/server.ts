@@ -39,7 +39,6 @@ const start = async (): Promise<void> => {
     logger.info("✅ PostgreSQL connected via Prisma");
 
     await connectRedis();
-    logger.info("✅ Redis connected");
 
     server.listen(PORT, () => {
       logger.info(

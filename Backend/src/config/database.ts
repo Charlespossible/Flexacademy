@@ -6,7 +6,7 @@ const globalForPrisma = globalThis as typeof globalThis & {
   prisma?: PrismaClient;
 };
 
-export const prisma: PrismaClient =
+export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
     log: [
@@ -21,7 +21,7 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 if (process.env.NODE_ENV === "development") {
-  prisma.$on("query", (e) => {
+  (prisma.$on as any)("query", (e: any) => {
     if (e.duration > 200) {
       logger.warn(
         { query: e.query, duration: `${e.duration}ms` },
@@ -31,6 +31,6 @@ if (process.env.NODE_ENV === "development") {
   });
 }
 
-prisma.$on("error", (e) => {
+(prisma.$on as any)("error", (e: any) => {
   logger.error({ message: e.message }, "Prisma error");
 });

@@ -11,11 +11,12 @@ import { RegisterBody, LoginBody, ResetPasswordBody, TokenPair } from "../types"
 import { User } from "@prisma/client";
 
 // ─── Helpers ──────────────────────────────────
-type SafeUser = Omit<User, "passwordHash" | "refreshTokenHash">;
+type SafeUser = Omit<User, "passwordHash" | "refreshTokenHash" | "suspendedBy">;
 
 const sanitizeUser = (user: User): SafeUser => {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { passwordHash, refreshTokenHash, ...safe } = user;
+  // suspendedBy is an admin user id — the suspended user has no need for it.
+  const { passwordHash, refreshTokenHash, suspendedBy, ...safe } = user;
   return safe;
 };
 
@@ -35,7 +36,7 @@ export const register = async (
   const { email, password, firstName, lastName, role, gradeLevel, curriculum } = req.body;
 
   const existingUser = await prisma.user.findUnique({ where: { email } });
-  if (existingUser) throw new ApiError(StatusCodes.CONFLICT, "Email already registered.");
+  if (existingUser) throw ApiError(StatusCodes.CONFLICT, "Email already registered.");
 
   const passwordHash = await bcrypt.hash(password, 12);
 
@@ -58,6 +59,15 @@ export const register = async (
           curriculum: curriculum ?? "WAEC",
         },
       });
+    } else if (role === "TUTOR") {
+      await tx.tutorProfile.create({
+        data: {
+          userId: newUser.id,
+          qualifications: [],
+          specializations: [],
+          subjectIds: [],
+        },
+      });
     }
 
     await tx.subscription.create({
@@ -75,11 +85,14 @@ export const register = async (
   const tokens: TokenPair = generateTokens(user.id, user.role);
   await storeRefreshToken(user.id, tokens.refreshToken);
 
+  // Fetch the subscription that was created in the transaction above
+  const subscription = await prisma.subscription.findUnique({ where: { userId: user.id } });
+
   logger.info({ userId: user.id }, "New user registered");
 
   res.status(StatusCodes.CREATED).json(
     ApiResponse.success(
-      { user: sanitizeUser(user), ...tokens },
+      { user: sanitizeUser(user), subscription, ...tokens },
       "Registration successful. Please verify your email."
     )
   );
@@ -98,15 +111,15 @@ export const login = async (
   });
 
   if (!user?.passwordHash) {
-    throw new ApiError(StatusCodes.UNAUTHORIZED, "Invalid email or password.");
+    throw ApiError(StatusCodes.UNAUTHORIZED, "Invalid email or password.");
   }
 
   if (!user.isActive) {
-    throw new ApiError(StatusCodes.FORBIDDEN, "Account suspended. Contact support.");
+    throw ApiError(StatusCodes.FORBIDDEN, "Account suspended. Contact support.");
   }
 
   const isMatch = await bcrypt.compare(password, user.passwordHash);
-  if (!isMatch) throw new ApiError(StatusCodes.UNAUTHORIZED, "Invalid email or password.");
+  if (!isMatch) throw ApiError(StatusCodes.UNAUTHORIZED, "Invalid email or password.");
 
   const tokens: TokenPair = generateTokens(user.id, user.role);
   await storeRefreshToken(user.id, tokens.refreshToken);
@@ -136,17 +149,17 @@ export const refreshToken = async (
   res: Response
 ): Promise<void> => {
   const { refreshToken: token } = req.body;
-  if (!token) throw new ApiError(StatusCodes.UNAUTHORIZED, "Refresh token required.");
+  if (!token) throw ApiError(StatusCodes.UNAUTHORIZED, "Refresh token required.");
 
   const decoded = verifyRefreshToken(token);
   const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
 
   if (!user?.refreshTokenHash) {
-    throw new ApiError(StatusCodes.UNAUTHORIZED, "Invalid refresh token.");
+    throw ApiError(StatusCodes.UNAUTHORIZED, "Invalid refresh token.");
   }
 
   const isValid = await bcrypt.compare(token, user.refreshTokenHash);
-  if (!isValid) throw new ApiError(StatusCodes.UNAUTHORIZED, "Invalid refresh token.");
+  if (!isValid) throw ApiError(StatusCodes.UNAUTHORIZED, "Invalid refresh token.");
 
   const tokens = generateTokens(user.id, user.role);
   await storeRefreshToken(user.id, tokens.refreshToken);
@@ -179,7 +192,7 @@ export const verifyEmail = async (
   const userId = await cache.get<string>(`email_verify:${token}`);
 
   if (!userId) {
-    throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid or expired verification token.");
+    throw ApiError(StatusCodes.BAD_REQUEST, "Invalid or expired verification token.");
   }
 
   await prisma.user.update({
@@ -225,7 +238,7 @@ export const resetPassword = async (
   const userId = await cache.get<string>(`pwd_reset:${token}`);
 
   if (!userId) {
-    throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid or expired reset token.");
+    throw ApiError(StatusCodes.BAD_REQUEST, "Invalid or expired reset token.");
   }
 
   const passwordHash = await bcrypt.hash(newPassword, 12);
