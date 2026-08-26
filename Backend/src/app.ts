@@ -76,11 +76,16 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // ─── CORS ─────────────────────────────────────────
+// Localhost is allowed only outside production. Shipping it live would let
+// any page served from a developer machine call the production API with
+// credentials attached.
 const allowedOrigins = [
-  process.env.CLIENT_URL ?? "http://localhost:3000",
-  "http://localhost:3000",
-  "http://localhost:5173",
-];
+  process.env.CLIENT_URL,
+  process.env.FRONTEND_URL,
+  ...(process.env.NODE_ENV === "production"
+    ? []
+    : ["http://localhost:3000", "http://localhost:5173"]),
+].filter((o): o is string => Boolean(o));
 
 app.use(
   cors({

@@ -8,11 +8,11 @@ const options: swaggerJsdoc.Options = {
       version: "1.0.0",
       description:
         "AI-powered learning & exam practice platform for African students. WAEC, JAMB, NECO, IGCSE and more.",
-      contact: { name: "FlexAcademy Dev Team", email: "dev@flexacademy.com" },
+      contact: { name: "FlexAcademy Dev Team", email: "dev@flexacademy.ng" },
     },
     servers: [
       { url: "http://localhost:5000/api/v1", description: "Development" },
-      { url: "https://api.flexacademy.com/api/v1", description: "Production" },
+      { url: "https://api.flexacademy.ng/api/v1", description: "Production" },
     ],
     components: {
       securitySchemes: {

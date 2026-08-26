@@ -30,12 +30,28 @@ async function main(): Promise<void> {
   console.log(`✅ ${subjects.length} subjects seeded`);
 
   // ─── Admin User ────────────────────────────
-  const adminHash = await bcrypt.hash("Admin@1234", 12);
+  // In production the credentials MUST come from the environment. A hardcoded
+  // password in a public repo would hand over SUPER_ADMIN to anyone who reads it.
+  const isProd = process.env.NODE_ENV === "production";
+  const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@flexacademy.ng";
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? (isProd ? null : "Admin@1234");
+
+  if (!adminPassword) {
+    throw new Error(
+      "SEED_ADMIN_PASSWORD must be set when seeding with NODE_ENV=production. " +
+        "Refusing to create a super-admin with a default password."
+    );
+  }
+  if (isProd && adminPassword.length < 12) {
+    throw new Error("SEED_ADMIN_PASSWORD must be at least 12 characters in production.");
+  }
+
+  const adminHash = await bcrypt.hash(adminPassword, 12);
   const admin = await prisma.user.upsert({
-    where: { email: "admin@flexacademy.com" },
+    where: { email: adminEmail },
     update: {},
     create: {
-      email: "admin@flexacademy.com",
+      email: adminEmail,
       passwordHash: adminHash,
       firstName: "Flex",
       lastName: "Admin",
@@ -53,39 +69,46 @@ async function main(): Promise<void> {
       status: SubscriptionStatus.ACTIVE,
     },
   });
-  console.log("✅ Admin user seeded: admin@flexacademy.com / Admin@1234");
+  console.log(
+      );
 
   // ─── Demo Student ──────────────────────────
-  const studentHash = await bcrypt.hash("Student@1234", 12);
-  await prisma.user.upsert({
-    where: { email: "demo@flexacademy.com" },
-    update: {},
-    create: {
-      email: "demo@flexacademy.com",
-      passwordHash: studentHash,
-      firstName: "Chidi",
-      lastName: "Okafor",
-      role: Role.STUDENT,
-      isEmailVerified: true,
-      studentProfile: {
-        create: {
-          gradeLevel: "SS3",
-          curriculum: "WAEC",
-          targetExams: [ExamCategory.WAEC, ExamCategory.JAMB],
-          targetYear: 2025,
-          state: "Lagos",
-          country: "Nigeria",
+  // Demo accounts are a development convenience. Seeding a known-password
+  // student into production would be an open door, so skip it there.
+  if (!isProd) {
+    const studentHash = await bcrypt.hash("Student@1234", 12);
+    await prisma.user.upsert({
+      where: { email: "demo@flexacademy.ng" },
+      update: {},
+      create: {
+        email: "demo@flexacademy.ng",
+        passwordHash: studentHash,
+        firstName: "Chidi",
+        lastName: "Okafor",
+        role: Role.STUDENT,
+        isEmailVerified: true,
+        studentProfile: {
+          create: {
+            gradeLevel: "SS3",
+            curriculum: "WAEC",
+            targetExams: [ExamCategory.WAEC, ExamCategory.JAMB],
+            targetYear: 2025,
+            state: "Lagos",
+            country: "Nigeria",
+          },
+        },
+        subscription: {
+          create: {
+            tier: SubscriptionTier.PRO,
+            status: SubscriptionStatus.TRIAL,
+          },
         },
       },
-      subscription: {
-        create: {
-          tier: SubscriptionTier.PRO,
-          status: SubscriptionStatus.TRIAL,
-        },
-      },
-    },
-  });
-  console.log("✅ Demo student seeded: demo@flexacademy.com / Student@1234");
+    });
+    console.log("✅ Demo student seeded: demo@flexacademy.ng / Student@1234");
+  } else {
+    console.log("↷ Demo student skipped (production)");
+  }
 
   // ─── Math Topics ───────────────────────────
   const mathSubject = subjects[0];

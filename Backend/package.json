@@ -22,7 +22,9 @@
     "prisma:studio": "prisma studio",
     "prisma:seed": "tsx prisma/seed.ts",
     "prisma:reset": "prisma migrate reset",
-    "validate:env": "tsx src/utils/validateEnv.ts"
+    "validate:env": "tsx src/utils/validateEnv.ts",
+    "postinstall": "prisma generate",
+    "start:prod": "prisma migrate deploy && node dist/server.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

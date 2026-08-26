@@ -1,5 +1,5 @@
 import "express-async-errors";
-import "dotenv/config";
+import "./bootstrap";
 
 import http from "http";
 import app from "./app";
