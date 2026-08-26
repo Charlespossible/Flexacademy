@@ -1,170 +1,244 @@
 # Deploying FlexAcademy to Railway
 
-Three Railway services in one project, plus DNS at Truehost.
+Follow these in order. Do not skip ahead — most failed deploys are a step done
+out of sequence.
+
+**End state:** four things in one Railway project.
 
 ```
-flexacademy.ng      → Railway service: frontend  (Vite build, served static)
-api.flexacademy.ng  → Railway service: backend   (Express + Prisma)
-                      Railway plugin:  PostgreSQL
-                      Railway plugin:  Redis
+backend    Express + Prisma      ->  api.flexacademy.ng
+frontend   Vite static build     ->  flexacademy.ng
+Postgres   Railway plugin
+Redis      Railway plugin
 ```
 
-Both apps live in one repo, so each service sets a **Root Directory**:
-
-| Service  | Root Directory        |
-|----------|-----------------------|
-| backend  | `Backend`             |
-| frontend | `Frontend/Frontend`   |
-
-`railway.json` in each of those folders already defines the build and start
-commands, so there is nothing to configure in the dashboard beyond variables
-and the root directory.
+Both apps live in one repo, so each service points at its own folder.
 
 ---
 
-## 1. Create the project
+## STEP 1 — Push the code
 
-1. Railway → **New Project** → **Deploy from GitHub repo** → pick this repo.
-2. On the created service, **Settings → Root Directory** → `Backend`. Rename it `backend`.
-3. **+ New** → **Database** → **PostgreSQL**.
-4. **+ New** → **Database** → **Redis**.
-5. **+ New** → **GitHub Repo** (same repo) → Root Directory `Frontend/Frontend`. Rename it `frontend`.
-
-## 2. Generate secrets
-
-Locally:
+Railway deploys from GitHub. Nothing is uploaded by hand.
 
 ```bash
-cd Backend && node scripts/gen-secrets.mjs
+cd c:/Users/dell/Desktop/MyProjects/Flexacademy
+git status --porcelain          # confirm no .env appears
+git add .
+git commit -m "Prepare for Railway deployment"
+git push origin main
 ```
 
-Generate a **fresh** set — never reuse development values, and never paste them
-into chat or commit them.
+Both `.env` files are gitignored and have never been committed. Verified.
 
-## 3. Backend variables
+---
 
-Set on the **backend** service. Use Railway's *variable reference* syntax for
-the two database URLs so they track the plugins automatically.
-
-| Variable | Production value |
-|---|---|
-| `NODE_ENV` | `production` |
-| `PORT` | *(leave unset — Railway injects it)* |
-| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
-| `REDIS_URL` | `${{Redis.REDIS_URL}}` |
-| `JWT_SECRET` | from `gen-secrets.mjs` |
-| `JWT_REFRESH_SECRET` | from `gen-secrets.mjs` (must differ) |
-| `INTERNAL_API_KEY` | from `gen-secrets.mjs` |
-| `CLIENT_URL` | `https://flexacademy.ng` |
-| `FRONTEND_URL` | `https://flexacademy.ng` |
-| `APP_URL` | `https://api.flexacademy.ng` |
-| `ANTHROPIC_API_KEY` | your key |
-| `ANTHROPIC_MODEL` | `claude-sonnet-5` |
-| `CLOUDINARY_CLOUD_NAME` | `dr2pczajq` |
-| `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | from Cloudinary dashboard |
-| `NOMBA_BASE_URL` | Nomba **live** base URL |
-| `NOMBA_CLIENT_ID` / `NOMBA_CLIENT_SECRET` / `NOMBA_ACCOUNT_ID` | **live** credentials |
-| `NOMBA_WEBHOOK_SECRET` | from Nomba dashboard |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | from Google Cloud Console |
-| `GOOGLE_CALLBACK_URL` | `https://api.flexacademy.ng/api/v1/auth/google/callback` |
-| `LOG_LEVEL` | `info` |
-| `SEED_ADMIN_EMAIL` | `admin@flexacademy.ng` |
-| `SEED_ADMIN_PASSWORD` | from `gen-secrets.mjs` — **store in a password manager** |
-
-**Not needed in production:** `DATABASE_SHADOW_URL` (only used by
-`prisma migrate dev` locally).
-
-The server validates all of this at boot and **refuses to start** if anything
-is missing, if a JWT secret is under 32 characters, if both secrets match, or
-if the URLs are not `https`. A broken deploy fails immediately instead of
-serving traffic.
-
-## 4. Frontend variables
-
-Vite reads env at **build** time, so this must be set before the first deploy
-or the bundle will point at localhost.
-
-| Variable | Value |
-|---|---|
-| `VITE_API_URL` | `https://api.flexacademy.ng/api/v1` |
-
-## 5. Database — created and migrated automatically
-
-The Postgres plugin creates the database. Schema is applied on every deploy by
-the start command:
-
-```
-npx prisma migrate deploy && node dist/server.js
-```
-
-`migrate deploy` applies only committed migrations and never prompts or resets,
-which is what makes it safe to run on every boot. All 13 migrations are
-committed.
-
-**Seed reference data once**, after the first successful deploy:
+## STEP 2 — Generate your secrets
 
 ```bash
-railway link                       # pick the project, then the backend service
-railway run npm run prisma:seed
+cd Backend
+node scripts/gen-secrets.mjs
 ```
 
-That inserts subjects and topics, and creates the super-admin from
-`SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`. With `NODE_ENV=production` it
-**refuses to fall back to a default password** and skips the demo student
-entirely.
+Copy the output somewhere safe (password manager). You need it in Step 5.
+Generate a fresh set — never reuse development values.
 
-## 6. Domain — Truehost stays the registrar
+---
 
-Registration remains at Truehost. Only DNS changes.
+## STEP 3 — Create the backend service
 
-In Railway, **Settings → Networking → Custom Domain** on each service:
-- frontend → `flexacademy.ng` and `www.flexacademy.ng`
-- backend → `api.flexacademy.ng`
+1. Railway -> **New Project** -> **Deploy from GitHub repo**
+2. Pick `Charlespossible/Flexacademy`. If it is not listed, click
+   **Configure GitHub App** and grant access.
+3. **The first build will fail.** That is expected — Railway does not yet know
+   the backend lives in a subfolder.
+4. Open the service -> **Settings**
+   - **Root Directory** -> `Backend`   <- this is the one that matters
+   - **Service Name** -> `backend`     <- cosmetic, but keeps things clear
 
-Railway shows a CNAME target per domain. Add at your DNS host:
+Do not set build or start commands. `Backend/railway.json` supplies them.
 
-| Record | Name | Value |
-|---|---|---|
-| CNAME | `www` | *(Railway target for frontend)* |
-| CNAME | `api` | *(Railway target for backend)* |
-| ALIAS/ANAME | `@` | *(Railway target for frontend)* |
+---
 
-Apex domains need ALIAS/ANAME (or CNAME flattening). Truehost's panel may not
-support that — which is the practical reason to move nameservers to
-**Cloudflare** (free): it flattens CNAMEs at the apex, propagates in minutes,
-and adds CDN caching that matters on Nigerian connections.
+## STEP 4 — Add the databases
 
-Railway issues TLS automatically once DNS resolves.
+In the same project:
 
-## 7. Ongoing updates
+- **+ New** -> **Database** -> **PostgreSQL**
+- **+ New** -> **Database** -> **Redis**
 
-Push to your default branch and Railway rebuilds and redeploys both services.
-Nothing else to do.
+Nothing to configure inside them. Note the exact name shown on each card —
+you need it in the next step.
 
-**When a change includes a schema migration:** commit the generated folder
-under `Backend/prisma/migrations/`. `migrate deploy` picks it up on the next
-boot. Never run `prisma migrate dev` against production.
+---
 
-## 8. After the first deploy — check these
+## STEP 5 — Backend variables
+
+**backend service -> Variables -> Raw Editor.** Paste everything at once.
+Setting them one at a time causes a failed deploy per missing variable.
+
+```
+NODE_ENV=production
+
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+REDIS_URL=${{Redis.REDIS_URL}}
+
+JWT_SECRET=<from Step 2>
+JWT_REFRESH_SECRET=<from Step 2>
+INTERNAL_API_KEY=<from Step 2>
+SEED_ADMIN_EMAIL=admin@flexacademy.ng
+SEED_ADMIN_PASSWORD=<from Step 2>
+
+CLIENT_URL=https://flexacademy.ng
+FRONTEND_URL=https://flexacademy.ng
+APP_URL=https://api.flexacademy.ng
+
+ANTHROPIC_API_KEY=<your key>
+ANTHROPIC_MODEL=claude-sonnet-5
+
+CLOUDINARY_CLOUD_NAME=dr2pczajq
+CLOUDINARY_API_KEY=<from Cloudinary>
+CLOUDINARY_API_SECRET=<from Cloudinary>
+
+LOG_LEVEL=info
+```
+
+**Do not set `PORT`.** Railway injects it.
+
+**`${{Postgres.DATABASE_URL}}`** is a live reference, not a literal. Replace
+`Postgres` with your database service's actual name from Step 4. Type `${{`
+in the value field and use the autocomplete rather than typing it by hand.
+
+After saving, reveal the resolved value of `DATABASE_URL`. It must show a real
+`postgresql://...` string. If it shows the literal `${{...}}`, the service name
+is wrong — fix it before deploying.
+
+**Not needed:** `DATABASE_SHADOW_URL` (local `migrate dev` only), and the
+`NOMBA_*` block until you have live credentials. The app boots without payment
+keys and logs a warning; checkout is the only thing that will not work.
+
+---
+
+## STEP 6 — Seed the database, once
+
+The schema is applied automatically on every deploy. Reference data
+(subjects, topics) and your admin account need one manual run.
+
+**backend service -> Settings -> Deploy -> Custom Start Command:**
+
+```
+npx prisma migrate deploy && npm run prisma:seed && node dist/server.js
+```
+
+Redeploy. Watch the logs for:
+
+```
+8 subjects seeded
+Admin seeded: admin@flexacademy.ng (password from SEED_ADMIN_PASSWORD)
+Demo student skipped (production)
+FlexAcademy API running on port 8080 [production]
+```
+
+**Then clear the Custom Start Command** so `railway.json` takes over again.
+The seed is idempotent, but leaving it slows every boot.
+
+---
+
+## STEP 7 — Create the frontend service
+
+1. **+ New** -> **GitHub Repo** -> same repo
+2. **Settings -> Root Directory** -> `Frontend/Frontend`
+3. **Settings -> Service Name** -> `frontend`
+4. **Variables:**
+
+```
+VITE_API_URL=https://api.flexacademy.ng/api/v1
+```
+
+**Set this before the first successful build.** Vite bakes env values into the
+bundle at build time. If it builds without it, the live site calls localhost
+and nothing works until you redeploy.
+
+---
+
+## STEP 8 — Domain
+
+Registration stays at Truehost. Only DNS changes.
+
+In Railway, **Settings -> Networking -> Custom Domain**:
+- frontend -> `flexacademy.ng` and `www.flexacademy.ng`
+- backend -> `api.flexacademy.ng`
+
+Railway shows a CNAME target for each. Add at your DNS host:
+
+| Type        | Name  | Value                     |
+|-------------|-------|---------------------------|
+| CNAME       | `api` | Railway target (backend)  |
+| CNAME       | `www` | Railway target (frontend) |
+| ALIAS/ANAME | `@`   | Railway target (frontend) |
+
+Apex domains need ALIAS/ANAME, which Truehost's panel may not support. If so,
+move nameservers to **Cloudflare** (free) — it flattens CNAMEs at the apex,
+propagates in minutes, and adds CDN caching that helps on Nigerian networks.
+Registration still stays at Truehost.
+
+TLS is issued automatically once DNS resolves.
+
+---
+
+## STEP 9 — Verify
 
 ```bash
 curl https://api.flexacademy.ng/health
 ```
 
-- [ ] Health returns `{"status":"OK"}`
-- [ ] Deploy logs show `✅ Environment validated (production)`
-- [ ] Deploy logs show `Pricing config loaded and validated`
-- [ ] `https://flexacademy.ng` loads and can log in
-- [ ] Nomba webhook URL registered: `https://api.flexacademy.ng/api/v1/payments/webhook`
-- [ ] Google OAuth redirect URI added in Google Cloud Console
-- [ ] Super-admin login works; **change the seeded password**
+- [ ] Returns `{"status":"OK"}`
+- [ ] Logs show `Environment validated (production)`
+- [ ] Logs show `Pricing config loaded and validated`
+- [ ] `https://flexacademy.ng` loads
+- [ ] You can log in as `admin@flexacademy.ng`
+- [ ] Change the seeded admin password
 
 ---
 
-## Known gaps before taking real payments
+## Ongoing updates
+
+```bash
+git push origin main
+```
+
+Both services rebuild and redeploy. Schema migrations apply automatically on
+boot, as long as the migration folder is committed under
+`Backend/prisma/migrations/`.
+
+Never run `prisma migrate dev` against production.
+
+Optional once stable: **Settings -> Watch Paths** — `Backend/**` on the backend
+and `Frontend/Frontend/**` on the frontend, so each only rebuilds when its own
+code changes.
+
+---
+
+## If a deploy fails
+
+Read **Deploy Logs**, not Build Logs. The app refuses to boot on a bad config
+and prints exactly what is wrong.
+
+| Log message | Cause |
+|---|---|
+| `Environment variable not found: DATABASE_URL` | Step 5 not done, or wrong service name in the reference |
+| `Environment is not deployable: ... is missing` | A required variable is unset |
+| `JWT_SECRET is too short` | Use the Step 2 generator |
+| `SEED_ADMIN_PASSWORD must be set` | Set it before using the Step 6 start command |
+| Build fails, no `package.json` | Root Directory not set (Step 3) |
+
+---
+
+## Known gaps before taking real money
 
 - **No idempotency keys.** Nomba retries webhooks; concurrent retries can both
-  activate a subscription. Fix before going live.
+  activate a subscription.
 - **`Payment` stores only `amount`** — no `gross/vat/fee/net`, so revenue
   recognition and tutor payouts cannot be computed.
 - Money is `Decimal` naira, not integer kobo.
+
+Launch without payments if you like — the app runs fine and warns in the logs.

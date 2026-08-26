@@ -199,9 +199,16 @@ async function main(): Promise<void> {
   console.log(`✅ ${badges.length} badges seeded`);
 
   console.log("\n🎉 FlexAcademy seeding complete!");
+  // Never print credentials here — this lands in Railway deploy logs, which
+  // are readable by anyone with project access and persist indefinitely.
   console.log("────────────────────────────────────────");
-  console.log("  Admin:   admin@flexacademy.com / Admin@1234");
-  console.log("  Student: demo@flexacademy.com  / Student@1234");
+  if (isProd) {
+    console.log("  Seed complete. Admin: " + adminEmail);
+    console.log("  Password: the SEED_ADMIN_PASSWORD you configured.");
+  } else {
+    console.log("  Admin:   " + adminEmail + " / " + adminPassword);
+    console.log("  Student: demo@flexacademy.ng / Student@1234");
+  }
   console.log("────────────────────────────────────────");
 }
 
