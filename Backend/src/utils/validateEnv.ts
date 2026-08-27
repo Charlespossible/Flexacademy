@@ -39,6 +39,8 @@ const PRODUCTION_RECOMMENDED: Record<string, string> = {
   CLOUDINARY_API_KEY: "tutors cannot upload lesson video",
   CLOUDINARY_API_SECRET: "tutors cannot upload lesson video",
   REDIS_URL: "caching disabled; the app still runs",
+  GOOGLE_CLIENT_ID: "Google sign-in disabled; email/password still works",
+  GOOGLE_CLIENT_SECRET: "Google sign-in disabled; email/password still works",
 };
 
 /** Secrets that must not ship with their example values. */

@@ -36,6 +36,18 @@ export const configurePassport = (passport: PassportStatic): void => {
   );
 
   // ─── Google OAuth Strategy ─────────────────
+  // Registered only when credentials exist. passport-oauth2 throws on an
+  // empty clientID, which would take the whole API down — Google sign-in is
+  // optional, so its absence must degrade to "button unavailable", not a crash.
+  const googleConfigured = Boolean(
+    process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+  );
+
+  if (!googleConfigured) {
+    console.warn("   - GOOGLE_CLIENT_ID not set: Google sign-in disabled");
+    return;
+  }
+
   passport.use(
     new GoogleStrategy(
       {
